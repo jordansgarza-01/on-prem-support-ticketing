@@ -3,6 +3,7 @@ import datetime
 import importlib.util
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 import altair as alt
@@ -122,10 +123,67 @@ def format_stat_value(value: float | int) -> str:
     return f"{float(value):.2f}"
 
 
-def summarize_uploaded_data_file(uploaded_file):
-    """Read an uploaded Excel/CSV/SmartSheet-export file and build a summary for the chat agent."""
+def summarize_pbix_file(uploaded_file):
+    """Read an uploaded Power BI (.pbix) file and build a summary of its tables/measures for the chat agent."""
     try:
-        if uploaded_file.name.lower().endswith(".csv"):
+        from pbixray import PBIXRay
+    except Exception as exc:
+        return None, f"(Power BI file support isn't available right now: {exc})"
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pbix", delete=False) as tmp:
+            tmp.write(uploaded_file.getvalue())
+            tmp_path = tmp.name
+
+        model = PBIXRay(tmp_path)
+        table_names = list(model.tables)
+
+        lines = [
+            f"Uploaded Power BI file: {uploaded_file.name}",
+            f"Tables ({len(table_names)}): " + ", ".join(table_names),
+        ]
+
+        schema_df = model.schema
+        if schema_df is not None and not schema_df.empty and {"TableName", "ColumnName"}.issubset(schema_df.columns):
+            type_col = "DataType" if "DataType" in schema_df.columns else None
+            columns_by_table = []
+            for table_name, group in schema_df.groupby("TableName"):
+                if type_col:
+                    cols = ", ".join(f"{row.ColumnName} ({getattr(row, type_col)})" for row in group.itertuples())
+                else:
+                    cols = ", ".join(group["ColumnName"].tolist())
+                columns_by_table.append(f"{table_name}: {cols}")
+            lines.append("Columns by table:\n" + "\n".join(columns_by_table))
+
+        measures_df = model.dax_measures
+        if measures_df is not None and not measures_df.empty and "Name" in measures_df.columns:
+            measure_names = measures_df["Name"].dropna().tolist()
+            lines.append(f"DAX measures ({len(measure_names)}): " + ", ".join(measure_names[:30]))
+
+        summary_text = "\n".join(lines)
+        if len(summary_text) > 4000:
+            summary_text = summary_text[:4000] + "\n...(truncated)"
+        meta = {"name": uploaded_file.name, "kind": "pbix", "rows": len(table_names), "columns": len(table_names)}
+        return meta, summary_text
+    except Exception as exc:
+        return None, f"(Could not read the uploaded Power BI file '{uploaded_file.name}': {exc})"
+    finally:
+        if tmp_path:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+
+def summarize_uploaded_data_file(uploaded_file):
+    """Read an uploaded Excel/CSV/SmartSheet-export/Power BI file and build a summary for the chat agent."""
+    lowered_name = uploaded_file.name.lower()
+    if lowered_name.endswith(".pbix"):
+        return summarize_pbix_file(uploaded_file)
+
+    try:
+        if lowered_name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
             df = pd.read_excel(uploaded_file)
@@ -149,7 +207,7 @@ def summarize_uploaded_data_file(uploaded_file):
     summary_text = "\n".join(lines)
     if len(summary_text) > 4000:
         summary_text = summary_text[:4000] + "\n...(truncated)"
-    meta = {"name": uploaded_file.name, "rows": len(df), "columns": len(df.columns)}
+    meta = {"name": uploaded_file.name, "kind": "tabular", "rows": len(df), "columns": len(df.columns)}
     return meta, summary_text
 
 
@@ -157,11 +215,12 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
     prompt_text = (prompt or "support request").strip()
     lowered_prompt = prompt_text.lower()
 
-    data_file_note = (
-        f"I can see you uploaded {data_meta['name']} ({data_meta['rows']} rows, {data_meta['columns']} columns). "
-        if data_meta
-        else ""
-    )
+    if data_meta and data_meta.get("kind") == "pbix":
+        data_file_note = f"I can see you uploaded the Power BI file {data_meta['name']} with {data_meta['columns']} table(s). "
+    elif data_meta:
+        data_file_note = f"I can see you uploaded {data_meta['name']} ({data_meta['rows']} rows, {data_meta['columns']} columns). "
+    else:
+        data_file_note = ""
 
     if any(term in lowered_prompt for term in ["printer", "print"]):
         return (
@@ -257,12 +316,14 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
             "Tell us what data you have and what question you're trying to answer, then submit a ticket and we'll take it from there!"
         )
 
-    if any(term in lowered_prompt for term in ["power bi", "powerbi", "bi report", "bi dashboard", "power platform", "power apps", "power automate", "power pages", "powerapps"]):
+    if any(term in lowered_prompt for term in ["power bi", "powerbi", "bi report", "bi dashboard", "power platform", "power apps", "power automate", "power pages", "powerapps", "pbix", "q&a", "qna", "q and a"]):
         return (
             data_file_note +
             "Power Platform question (Power BI, Power Apps, Power Automate, or Power Pages)? No problem! "
             "If a report, app, or flow isn't loading or the numbers/behavior look off, try refreshing the page or signing out and back in. "
             "If a flow (Power Automate) stopped running, check if it's been turned off or hit an error — that's usually shown right on the flow's run history. "
+            "Want help with a Q&A-style question (like Power BI's natural-language 'ask a question' feature)? Just type it in plain English — e.g. 'total sales by region' — "
+            "and if you've attached a .pbix file, I'll use its tables and measures to answer as specifically as I can. "
             "If you need something new built or changed, just describe what you want to see — even a rough sketch on paper works — and submit a ticket. We'll build it out for you!"
         )
 
@@ -400,9 +461,10 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "warehouse-centric inventory control; quality control; industrial automation (PLCs, SCADA, conveyors, sortation); "
     "robotics (AGVs, AMRs, cobots); statistical process control (SPC); and statistical quality control (SQC). "
     "You are also an expert in data science, analytics, and reporting — especially Excel, SmartSheet, and Power BI — and users "
-    "may upload a CSV or Excel file for you to analyze. When a data summary is provided in a system message, use it to answer "
-    "the user's data, analytics, or reporting question as specifically as possible (e.g., referencing actual column names, "
-    "row counts, or trends from the summary). "
+    "may upload a CSV, Excel, or Power BI (.pbix) file for you to analyze. When a data summary is provided in a system message, "
+    "use it to answer the user's data, analytics, or reporting question as specifically as possible (e.g., referencing actual "
+    "column names, table names, DAX measures, row counts, or trends from the summary). You can also answer natural-language "
+    "Q&A-style questions about the data, similar to Power BI's built-in Q&A feature. "
     "Answer with the depth and accuracy of a subject-matter expert on each of these topics, but always translate that "
     "expertise into casual, plain, layman's terms for a non-technical audience — avoid jargon, and explain any "
     "technical term you do use. Keep replies short and conversational. Do not mention ticket counts or system context. "
@@ -502,7 +564,7 @@ with assistant_container:
     chat_submission = st.chat_input(
         "What seems to be the problem? (Attach a reference file, if need be)",
         accept_file=True,
-        file_type=["xlsx", "xls", "csv"],
+        file_type=["xlsx", "xls", "csv", "pbix"],
     )
     if chat_submission:
         prompt = (chat_submission.text or "").strip()
