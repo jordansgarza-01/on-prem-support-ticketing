@@ -75,7 +75,7 @@ st.markdown(
 if not st.runtime.exists():
     st.session_state.setdefault("_headless_runtime", True)
 
-APP_PASSWORD = "Platinum"
+APP_PASSWORD = "Platinum2025"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
@@ -122,9 +122,46 @@ def format_stat_value(value: float | int) -> str:
     return f"{float(value):.2f}"
 
 
-def call_local_support_assistant(prompt: str) -> str:
+def summarize_uploaded_data_file(uploaded_file):
+    """Read an uploaded Excel/CSV/SmartSheet-export file and build a summary for the chat agent."""
+    try:
+        if uploaded_file.name.lower().endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+    except Exception as exc:
+        return None, f"(Could not read the uploaded file '{uploaded_file.name}': {exc})"
+
+    lines = [
+        f"Uploaded file: {uploaded_file.name}",
+        f"Rows: {len(df)}, Columns: {len(df.columns)}",
+        "Column names and types: " + ", ".join(f"{col} ({dtype})" for col, dtype in df.dtypes.items()),
+    ]
+    missing = df.isna().sum()
+    missing_cols = [f"{col}: {count}" for col, count in missing.items() if count > 0]
+    if missing_cols:
+        lines.append("Missing values: " + ", ".join(missing_cols))
+    numeric_df = df.select_dtypes(include="number")
+    if not numeric_df.empty:
+        lines.append("Numeric summary:\n" + numeric_df.describe().round(2).to_string())
+    lines.append("First rows:\n" + df.head(5).to_string(index=False))
+
+    summary_text = "\n".join(lines)
+    if len(summary_text) > 4000:
+        summary_text = summary_text[:4000] + "\n...(truncated)"
+    meta = {"name": uploaded_file.name, "rows": len(df), "columns": len(df.columns)}
+    return meta, summary_text
+
+
+def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> str:
     prompt_text = (prompt or "support request").strip()
     lowered_prompt = prompt_text.lower()
+
+    data_file_note = (
+        f"I can see you uploaded {data_meta['name']} ({data_meta['rows']} rows, {data_meta['columns']} columns). "
+        if data_meta
+        else ""
+    )
 
     if any(term in lowered_prompt for term in ["printer", "print"]):
         return (
@@ -140,11 +177,34 @@ def call_local_support_assistant(prompt: str) -> str:
             "Still stuck? Check if anyone else nearby is having the same problem — if so, it might be on our end and we'll get it sorted. Submit a ticket and we'll jump on it!"
         )
 
-    if any(term in lowered_prompt for term in ["radio", "rf", "rfid", "bluetooth", "scanner", "device", "peripheral"]):
+    if any(term in lowered_prompt for term in [
+        "radio", "rf", "rfid", "bluetooth", "scanner", "device", "peripheral",
+        "keyboard", "mouse", "mice", "monitor", "webcam", "headset", "headphones",
+        "microphone", "speaker", "usb", "docking station", "external drive",
+    ]):
+        peripheral_tips = []
+        if any(term in lowered_prompt for term in ["keyboard", "mouse", "mice"]):
+            peripheral_tips.append(
+                "If it's a keyboard or mouse, check the batteries (if wireless) and try a different USB port or re-pairing it."
+            )
+        if any(term in lowered_prompt for term in ["monitor", "webcam"]):
+            peripheral_tips.append(
+                "If it's a monitor or webcam, double-check the cable connections on both ends and try a different port or cable if one's handy."
+            )
+        if any(term in lowered_prompt for term in ["headset", "headphones", "microphone", "speaker"]):
+            peripheral_tips.append(
+                "For audio devices, make sure the right device is selected as your default in your sound settings, not just plugged in."
+            )
+        if any(term in lowered_prompt for term in ["usb", "docking station", "external drive"]):
+            peripheral_tips.append(
+                "For USB or docking station issues, try a different port, and if you're using a dock, unplug and reconnect all the cables from your laptop."
+            )
+        peripheral_extra = (" " + " ".join(peripheral_tips)) if peripheral_tips else ""
         return (
-            "Looks like a device issue! Start by turning it off and back on. "
+            "Looks like a device or peripheral issue! Start by turning it off and back on. "
             "If it pairs wirelessly, try unpairing it and pairing it again from scratch. "
-            "Make sure the battery isn't low too — that can cause all kinds of weird behavior. If it's still acting up, submit a ticket and we'll take a look!"
+            "Make sure the battery isn't low too — that can cause all kinds of weird behavior." + peripheral_extra +
+            " If it's still acting up, submit a ticket and we'll take a look!"
         )
 
     if any(term in lowered_prompt for term in ["blue yonder", "jda", "wms", "warehouse management"]):
@@ -191,6 +251,7 @@ def call_local_support_assistant(prompt: str) -> str:
 
     if any(term in lowered_prompt for term in ["data", "analysis", "analyze", "trend", "chart", "graph", "dashboard", "metric", "kpi"]):
         return (
+            data_file_note +
             "Need help making sense of your data? You're in the right place! "
             "Whether you need a simple summary, a chart, or a full dashboard, we can help you figure out the best way to show what's going on. "
             "Tell us what data you have and what question you're trying to answer, then submit a ticket and we'll take it from there!"
@@ -198,6 +259,7 @@ def call_local_support_assistant(prompt: str) -> str:
 
     if any(term in lowered_prompt for term in ["power bi", "powerbi", "bi report", "bi dashboard", "power platform", "power apps", "power automate", "power pages", "powerapps"]):
         return (
+            data_file_note +
             "Power Platform question (Power BI, Power Apps, Power Automate, or Power Pages)? No problem! "
             "If a report, app, or flow isn't loading or the numbers/behavior look off, try refreshing the page or signing out and back in. "
             "If a flow (Power Automate) stopped running, check if it's been turned off or hit an error — that's usually shown right on the flow's run history. "
@@ -206,6 +268,7 @@ def call_local_support_assistant(prompt: str) -> str:
 
     if any(term in lowered_prompt for term in ["smartsheet", "smart sheet"]):
         return (
+            data_file_note +
             "SmartSheet question? Got it! If a sheet, report, or dashboard isn't updating, try refreshing the page first — sometimes it just needs a moment to sync. "
             "If a formula or automation (like an alert or approval workflow) isn't firing right, double-check the trigger conditions match what you expect. "
             "Submit a ticket with the sheet name and what looks wrong, and we'll dig in with you!"
@@ -241,6 +304,7 @@ def call_local_support_assistant(prompt: str) -> str:
 
     if any(term in lowered_prompt for term in ["excel", "spreadsheet", "formula", "pivot", "vlookup", "macro"]):
         return (
+            data_file_note +
             "Excel question? Love it! Whether it's a formula that's not working, a pivot table that looks wrong, or you need help automating something, we can help. "
             "If you're getting an error, take a screenshot of it and include it in your ticket. "
             "If you need something built from scratch, just describe what you're trying to do in plain terms and we'll figure out the best way to do it!"
@@ -253,15 +317,69 @@ def call_local_support_assistant(prompt: str) -> str:
             "If you're trying to connect through VPN and it's not working, try disconnecting and reconnecting. We've got you covered!"
         )
 
-    if any(term in lowered_prompt for term in ["slow", "frozen", "crash", "restart", "computer", "pc", "laptop", "screen"]):
+    if any(term in lowered_prompt for term in [
+        "software", "application", "app", "program", "install", "installation",
+        "uninstall", "update", "upgrade", "driver", "license", "licensing",
+        "activation", "crash", "crashed", "crashing", "glitch", "bug",
+        "not responding", "hang", "hung", "error message",
+    ]):
+        software_tips = []
+        if any(term in lowered_prompt for term in ["install", "installation", "uninstall", "update", "upgrade"]):
+            software_tips.append(
+                "If it's an install or update issue, make sure you're on the latest version and have enough free disk space, then try running it again."
+            )
+        if any(term in lowered_prompt for term in ["license", "licensing", "activation"]):
+            software_tips.append(
+                "If it's a licensing or activation error, double-check you're signed in with your work account — that's usually what a license is tied to."
+            )
+        if any(term in lowered_prompt for term in ["crash", "crashed", "crashing", "not responding", "hang", "hung"]):
+            software_tips.append(
+                "If the program crashed or froze, save your work if you can, close it, and reopen it — a lot of glitches clear up after a fresh restart of the app."
+            )
+        if "driver" in lowered_prompt:
+            software_tips.append(
+                "If it's a driver problem, try unplugging and replugging the device, or restarting your computer so the driver reloads."
+            )
+        software_extra = (" " + " ".join(software_tips)) if software_tips else ""
         return (
-            "Ugh, a slow or frozen computer is so frustrating! First, try saving anything open and restarting — that fixes more than you'd think. "
-            "If it keeps happening, make a note of what you were doing when it froze and submit a ticket. "
+            "Sounds like a software issue!" + software_extra +
+            " If you're seeing a specific error message, take a screenshot of it and include it in your ticket — that helps us track down the cause fast. "
+            "Submit a ticket and we'll get it fixed up!"
+        )
+
+    if any(term in lowered_prompt for term in [
+        "slow", "frozen", "restart", "computer", "pc", "laptop", "screen",
+        "hardware", "motherboard", "cpu", "processor", "ram", "memory",
+        "hard drive", "ssd", "hdd", "battery", "charger", "power supply",
+        "cable", "port",
+    ]):
+        hardware_tips = []
+        if any(term in lowered_prompt for term in ["battery", "charger", "power supply"]):
+            hardware_tips.append(
+                "If it's a battery or power issue, check the charger cable and outlet, and let it charge a bit before assuming the battery itself is bad."
+            )
+        if any(term in lowered_prompt for term in ["hard drive", "ssd", "hdd", "ram", "memory", "cpu", "processor", "motherboard"]):
+            hardware_tips.append(
+                "If it's an internal component like the drive, memory, or processor, don't open the case yourself — submit a ticket so a technician can take a safe look."
+            )
+        if "screen" in lowered_prompt:
+            hardware_tips.append(
+                "If the screen is blank or flickering, check the brightness and cable connections first, and try an external monitor to see if the picture shows up there."
+            )
+        if any(term in lowered_prompt for term in ["cable", "port"]):
+            hardware_tips.append(
+                "If it's a loose cable or port, try reseating the connection or trying a different cable/port if one's available."
+            )
+        hardware_extra = (" " + " ".join(hardware_tips)) if hardware_tips else ""
+        return (
+            "Ugh, a slow or misbehaving computer is so frustrating!" + hardware_extra +
+            " First, try saving anything open and restarting — that fixes more than you'd think. "
+            "If it keeps happening, make a note of what you were doing when it started and submit a ticket. "
             "We can take a look and figure out if it needs a tune-up or something more. Hang tight!"
         )
 
     return (
-        "Hey there! I'm Owen, your support helper. I can help with tech issues, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, "
+        "Hey there! I'm Owen, your support helper. I can help with tech issues, hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, "
         "inventory control, quality control, industrial automation, robotics, SPC, SQC, and more. "
         "Just describe what's going on in your own words — no technical jargon needed — and I'll point you in the right direction. "
         "If we need to dig deeper, just submit a ticket and our team will come to you!"
@@ -273,11 +391,18 @@ GITHUB_MODELS_MODEL = "gpt-4o-mini"
 
 GITHUB_MODELS_SYSTEM_PROMPT = (
     "You are Owen, an internal on-prem technical support agent with expert-level knowledge across the following systems and topics: "
-    "everyday tech issues (printers, Wi-Fi, devices, logins); the Blue Yonder/JDA warehouse management system (WMS); "
+    "everyday tech issues (printers, Wi-Fi, devices, logins); computer hardware (laptops, desktops, monitors, batteries, "
+    "cables, ports, and internal components like RAM, CPU, and hard drives); software (applications, installs, updates, "
+    "licensing, drivers, crashes, and error messages); peripherals (keyboards, mice, webcams, headsets, docking stations, "
+    "and USB devices); the Blue Yonder/JDA warehouse management system (WMS); "
     "the Client Server Warehousing (CSW) WMS; SAP; SmartSheet; SharePoint; Excel; Microsoft Power Platform "
     "(Power BI, Power Apps, Power Automate, and Power Pages); Opendock Nova dock scheduling; continuous improvement; "
     "warehouse-centric inventory control; quality control; industrial automation (PLCs, SCADA, conveyors, sortation); "
     "robotics (AGVs, AMRs, cobots); statistical process control (SPC); and statistical quality control (SQC). "
+    "You are also an expert in data science, analytics, and reporting — especially Excel, SmartSheet, and Power BI — and users "
+    "may upload a CSV or Excel file for you to analyze. When a data summary is provided in a system message, use it to answer "
+    "the user's data, analytics, or reporting question as specifically as possible (e.g., referencing actual column names, "
+    "row counts, or trends from the summary). "
     "Answer with the depth and accuracy of a subject-matter expert on each of these topics, but always translate that "
     "expertise into casual, plain, layman's terms for a non-technical audience — avoid jargon, and explain any "
     "technical term you do use. Keep replies short and conversational. Do not mention ticket counts or system context. "
@@ -300,19 +425,24 @@ def _get_github_models_client():
         return None
 
 
-def call_github_models_support_assistant(prompt: str) -> str | None:
+def call_github_models_support_assistant(prompt: str, data_context: str | None = None) -> str | None:
     """Try GitHub Models first; return None so callers can fall back to the local assistant."""
     client = _get_github_models_client()
     if client is None:
         return None
 
+    messages = [{"role": "system", "content": GITHUB_MODELS_SYSTEM_PROMPT}]
+    if data_context:
+        messages.append({
+            "role": "system",
+            "content": "The user has uploaded a data file. Here is a summary to use when answering:\n" + data_context,
+        })
+    messages.append({"role": "user", "content": prompt})
+
     try:
         response = client.chat.completions.create(
             model=GITHUB_MODELS_MODEL,
-            messages=[
-                {"role": "system", "content": GITHUB_MODELS_SYSTEM_PROMPT},
-                {"role": "user", "content": prompt},
-            ],
+            messages=messages,
         )
         text = (response.choices[0].message.content or "").strip()
         return text or None
@@ -320,11 +450,11 @@ def call_github_models_support_assistant(prompt: str) -> str | None:
         return None
 
 
-def get_assistant_reply(prompt: str) -> str:
-    llm_reply = call_github_models_support_assistant(prompt)
+def get_assistant_reply(prompt: str, data_context: str | None = None, data_meta: dict | None = None) -> str:
+    llm_reply = call_github_models_support_assistant(prompt, data_context=data_context)
     if llm_reply:
         return llm_reply
-    return call_local_support_assistant(prompt)
+    return call_local_support_assistant(prompt, data_meta=data_meta)
 
 
 if "assistant_messages" not in st.session_state:
@@ -369,14 +499,34 @@ with assistant_container:
         with st.chat_message(message["role"], avatar=None):
             st.markdown(message["content"])
 
-    if prompt := st.chat_input("What seems to be the problem?"):
-        st.session_state.assistant_messages.append({"role": "user", "content": prompt.strip()})
+    chat_submission = st.chat_input(
+        "What seems to be the problem? Attach a file (\U0001F4CE) for Excel/CSV/SmartSheet questions.",
+        accept_file=True,
+        file_type=["xlsx", "xls", "csv"],
+    )
+    if chat_submission:
+        prompt = (chat_submission.text or "").strip()
+        attached_files = chat_submission.files
+
+        if attached_files:
+            attached_file = attached_files[0]
+            data_meta, data_summary = summarize_uploaded_data_file(attached_file)
+            st.session_state.uploaded_file_meta = data_meta
+            st.session_state.uploaded_file_summary = data_summary
+            if not prompt:
+                prompt = f"Please analyze the attached file '{attached_file.name}'."
+
+        st.session_state.assistant_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar=None):
-            st.markdown(prompt.strip())
+            st.markdown(prompt)
 
         try:
             with st.spinner("Thinking..."):
-                reply = get_assistant_reply(prompt.strip())
+                reply = get_assistant_reply(
+                    prompt,
+                    data_context=st.session_state.get("uploaded_file_summary"),
+                    data_meta=st.session_state.get("uploaded_file_meta"),
+                )
             st.session_state.assistant_messages.append({"role": "assistant", "content": reply})
             with st.chat_message("assistant", avatar=None):
                 st.markdown(reply)
@@ -387,6 +537,7 @@ with assistant_container:
             })
             with st.chat_message("assistant", avatar=None):
                 st.markdown(f"I hit a local issue while preparing a response: {exc}")
+
 
 # Show a section to add a new ticket.
 st.header("Submit a ticket")
