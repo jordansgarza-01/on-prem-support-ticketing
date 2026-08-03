@@ -500,7 +500,7 @@ with assistant_container:
             st.markdown(message["content"])
 
     chat_submission = st.chat_input(
-        "What seems to be the problem? Attach a file (\U0001F4CE) for Excel/CSV/SmartSheet questions.",
+        "What seems to be the problem? (Attach a reference file, if need be)",
         accept_file=True,
         file_type=["xlsx", "xls", "csv"],
     )
