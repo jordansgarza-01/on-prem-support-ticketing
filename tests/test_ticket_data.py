@@ -2,8 +2,12 @@ import pandas as pd
 
 import streamlit_app
 from ticket_data import (
+    calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
     calculate_average_open_tickets_per_week,
+    calculate_high_priority_open_ticket_count,
+    calculate_open_ticket_count,
+    calculate_resolution_rate,
     create_initial_ticket_dataframe,
     delete_ticket_by_id,
     filter_tickets_by_id,
@@ -18,11 +22,12 @@ def test_create_initial_ticket_dataframe_starts_empty():
     assert list(df.columns) == [
         "ID",
         "Issue",
-        "Status",
         "Priority",
         "Date Submitted",
         "Date Closed",
         "Submitted By",
+        "Assigned To",
+        "Resolution Status",
     ]
     assert df.empty
 
@@ -33,14 +38,14 @@ def test_sanitize_ticket_dataframe_removes_fake_ticket_ids():
             {
                 "ID": "TICKET-1001",
                 "Issue": "fake",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "High",
                 "Date Submitted": "2024-01-01",
             },
             {
                 "ID": "TICKET-1009",
                 "Issue": "real",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "Medium",
                 "Date Submitted": "2024-05-01",
             },
@@ -53,20 +58,37 @@ def test_sanitize_ticket_dataframe_removes_fake_ticket_ids():
     assert cleaned.iloc[0]["ID"] == "TICKET-1009"
 
 
+def test_sanitize_ticket_dataframe_replaces_empty_close_date_placeholder():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1009",
+                "Issue": "real",
+                "Date Closed": "empty",
+                "Resolution Status": "Pending",
+            }
+        ]
+    )
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned.iloc[0]["Date Closed"] == ""
+
+
 def test_delete_ticket_by_id_removes_the_requested_row():
     df = pd.DataFrame(
         [
             {
                 "ID": "TICKET-1009",
                 "Issue": "first",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "High",
                 "Date Submitted": "2024-05-01",
             },
             {
                 "ID": "TICKET-1010",
                 "Issue": "second",
-                "Status": "Closed",
+                "Resolution Status": "Resolved",
                 "Priority": "Low",
                 "Date Submitted": "2024-05-02",
             },
@@ -85,14 +107,14 @@ def test_filter_tickets_by_id_matches_ticket_numbers_case_insensitively():
             {
                 "ID": "TICKET-1009",
                 "Issue": "first",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "High",
                 "Date Submitted": "2024-05-01",
             },
             {
                 "ID": "TICKET-1010",
                 "Issue": "second",
-                "Status": "Closed",
+                "Resolution Status": "Resolved",
                 "Priority": "Low",
                 "Date Submitted": "2024-05-02",
             },
@@ -111,21 +133,21 @@ def test_calculate_average_open_tickets_per_week_uses_ticket_history():
             {
                 "ID": "TICKET-1011",
                 "Issue": "one",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "High",
                 "Date Submitted": "08-02-2026",
             },
             {
                 "ID": "TICKET-1012",
                 "Issue": "two",
-                "Status": "Closed",
+                "Resolution Status": "Resolved",
                 "Priority": "Medium",
                 "Date Submitted": "08-09-2026",
             },
             {
                 "ID": "TICKET-1013",
                 "Issue": "three",
-                "Status": "Open",
+                "Resolution Status": "Pending",
                 "Priority": "Low",
                 "Date Submitted": "08-16-2026",
             },
@@ -134,6 +156,124 @@ def test_calculate_average_open_tickets_per_week_uses_ticket_history():
 
     assert calculate_average_open_tickets_per_week(df) == 1.0
     assert calculate_average_closed_tickets_per_week(df) == 1.0
+
+
+def test_calculate_average_tickets_per_week_accepts_mixed_date_formats():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1014",
+                "Issue": "one",
+                "Resolution Status": "Pending",
+                "Priority": "High",
+                "Date Submitted": "08-02-2026",
+            },
+            {
+                "ID": "TICKET-1015",
+                "Issue": "two",
+                "Resolution Status": "Pending",
+                "Priority": "Medium",
+                "Date Submitted": "2026-08-03",
+            },
+            {
+                "ID": "TICKET-1016",
+                "Issue": "three",
+                "Resolution Status": "Pending",
+                "Priority": "Low",
+                "Date Submitted": "08-09-2026",
+            },
+        ]
+    )
+
+    assert calculate_average_open_tickets_per_week(df) == 1.5
+
+
+def test_calculate_average_tickets_per_week_accepts_submitted_timestamp():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1017",
+                "Issue": "one",
+                "Resolution Status": "Pending",
+                "Priority": "High",
+                "Date Submitted": "2026-08-04 12:34:56 ET",
+            }
+        ]
+    )
+
+    assert calculate_average_open_tickets_per_week(df) == 1.0
+
+
+def test_helpdesk_kpis_calculate_from_ticket_data():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1018",
+                "Priority": "High",
+                "Date Submitted": "2026-08-04 08:00:00 ET",
+                "Date Closed": "",
+                "Resolution Status": "Pending",
+            },
+            {
+                "ID": "TICKET-1019",
+                "Priority": "Low",
+                "Date Submitted": "2026-08-04 09:00:00",
+                "Date Closed": "",
+                "Resolution Status": "In Process",
+            },
+            {
+                "ID": "TICKET-1020",
+                "Priority": "Medium",
+                "Date Submitted": "2026-08-04 10:00:00",
+                "Date Closed": "2026-08-04 14:30:00",
+                "Resolution Status": "Resolved",
+            },
+        ]
+    )
+
+    assert calculate_open_ticket_count(df) == 2
+    assert calculate_high_priority_open_ticket_count(df) == 1
+    assert calculate_resolution_rate(df) == 33.33
+    assert calculate_average_resolution_time_hours(df) == 4.5
+
+
+def test_calculate_average_tickets_per_week_ignores_unparseable_dates():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1014",
+                "Issue": "one",
+                "Resolution Status": "Pending",
+                "Priority": "High",
+                "Date Submitted": "08-02-2026",
+            },
+            {
+                "ID": "TICKET-1015",
+                "Issue": "two",
+                "Resolution Status": "Resolved",
+                "Priority": "Medium",
+                "Date Submitted": "not-a-date",
+            },
+            {
+                "ID": "TICKET-1016",
+                "Issue": "three",
+                "Resolution Status": "Pending",
+                "Priority": "Low",
+                "Date Submitted": "",
+            },
+        ]
+    )
+
+    assert calculate_average_open_tickets_per_week(df) == 1.0
+    assert calculate_average_closed_tickets_per_week(df) == 0.0
+
+
+def test_sanitize_ticket_dataframe_handles_missing_id_column():
+    df = pd.DataFrame([{"Issue": "missing id", "Resolution Status": "Pending"}])
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned.equals(df)
 
 
 def test_call_local_support_assistant_returns_printer_guidance():

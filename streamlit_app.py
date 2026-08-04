@@ -20,8 +20,12 @@ if str(APP_ROOT) not in sys.path:
 
 try:
     from ticket_data import (
+        calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
         calculate_average_open_tickets_per_week,
+        calculate_high_priority_open_ticket_count,
+        calculate_open_ticket_count,
+        calculate_resolution_rate,
         create_initial_ticket_dataframe,
         delete_ticket_by_id,
         filter_tickets_by_id,
@@ -37,12 +41,20 @@ except ImportError:
 
     ticket_data_module = importlib.util.module_from_spec(ticket_data_spec)
     ticket_data_spec.loader.exec_module(ticket_data_module)
+    calculate_average_resolution_time_hours = (
+        ticket_data_module.calculate_average_resolution_time_hours
+    )
     calculate_average_closed_tickets_per_week = (
         ticket_data_module.calculate_average_closed_tickets_per_week
     )
     calculate_average_open_tickets_per_week = (
         ticket_data_module.calculate_average_open_tickets_per_week
     )
+    calculate_high_priority_open_ticket_count = (
+        ticket_data_module.calculate_high_priority_open_ticket_count
+    )
+    calculate_open_ticket_count = ticket_data_module.calculate_open_ticket_count
+    calculate_resolution_rate = ticket_data_module.calculate_resolution_rate
     create_initial_ticket_dataframe = ticket_data_module.create_initial_ticket_dataframe
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
@@ -102,12 +114,12 @@ st.markdown(
 st.write(
     """
     Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, MHE training, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
+Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
 # Create the starter dataframe and reset it when the app data version changes.
-TICKET_DATA_VERSION = 3
+TICKET_DATA_VERSION = 4
 if (
     "df" not in st.session_state
     or "ticket_data_version" not in st.session_state
@@ -117,18 +129,23 @@ if (
     st.session_state.ticket_data_version = TICKET_DATA_VERSION
 
 st.session_state.df = sanitize_ticket_dataframe(st.session_state.df)
+if "Resolution Status" not in st.session_state.df.columns and "Ticket Status" in st.session_state.df.columns:
+    st.session_state.df = st.session_state.df.rename(columns={"Ticket Status": "Resolution Status"})
 
 if "ticket_attachments" not in st.session_state:
-    st.session_state.ticket_attachments: dict[str, list[dict]] = {}
+    st.session_state.ticket_attachments = {}
 
 
 def _to_displayable_image(data: bytes, mime: str) -> tuple[bytes, str]:
     """Convert HEIC/HEIF bytes to JPEG; return other formats unchanged."""
     if mime in ("image/heic", "image/heif"):
         try:
-            import pillow_heif
-            from PIL import Image
+            import importlib
             import io as _io
+
+            from PIL import Image
+
+            pillow_heif = importlib.import_module("pillow_heif")
             pillow_heif.register_heif_opener()
             img = Image.open(_io.BytesIO(data))
             buf = _io.BytesIO()
@@ -578,9 +595,9 @@ st.markdown(
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
-    submitted_by = st.text_input("Submitted By", placeholder="Enter your name")
+    submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
-        "Attachments (Optional)",
+        "Attachments (optional)",
         type=["heic", "heif", "jpeg", "jpg", "png"],
         accept_multiple_files=True,
     )
@@ -598,13 +615,12 @@ if submitted:
             {
                 "ID": new_ticket_id,
                 "Issue": issue.strip() if issue else "No description provided.",
-                "Status": "Open",
                 "Priority": priority,
                 "Date Submitted": submitted_at,
                 "Date Closed": "",
                 "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
                 "Assigned To": "",
-                "Ticket Status": "Pending",
+                "Resolution Status": "Pending",
             }
         ]
     )
@@ -647,7 +663,7 @@ if st.button("Delete selected ticket") and selected_ticket_id:
     st.success(f"Deleted {selected_ticket_id}.")
     st.rerun()
 
-# Color-coded read-only view of Ticket Status.
+# Color-coded read-only view of the resolution status.
 _STATUS_STYLES = {
     "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
     "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
@@ -657,8 +673,15 @@ _STATUS_STYLES = {
 def _style_ticket_status_col(col):
     return col.map(lambda v: _STATUS_STYLES.get(v, ""))
 
-if not filtered_df.empty and "Ticket Status" in filtered_df.columns:
-    styled_view = filtered_df.style.apply(_style_ticket_status_col, subset=["Ticket Status"], axis=0)
+if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
+    styled_view = (
+        filtered_df.style.apply(
+            _style_ticket_status_col, subset=["Resolution Status"], axis=0
+        )
+        .set_properties(
+            subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
+        )
+    )
     st.markdown(
         "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
         "Status legend: "
@@ -680,11 +703,10 @@ edited_df = st.data_editor(
     width="stretch",
     hide_index=True,
     column_config={
-        "Status": st.column_config.SelectboxColumn(
-            "Status",
-            help="Ticket status",
-            options=["Open", "In Progress", "Closed"],
-            required=True,
+        "Issue": st.column_config.TextColumn(
+            "Issue",
+            help="Ticket description",
+            width="large",
         ),
         "Priority": st.column_config.SelectboxColumn(
             "Priority",
@@ -696,11 +718,15 @@ edited_df = st.data_editor(
             "Assigned To",
             help="Person assigned to this ticket",
         ),
-        "Ticket Status": st.column_config.SelectboxColumn(
-            "Ticket Status",
-            help="Current ticket status",
+        "Resolution Status": st.column_config.SelectboxColumn(
+            "Resolution Status",
+            help="Current resolution status",
             options=["Pending", "In Process", "Resolved"],
             required=True,
+        ),
+        "Date Closed": st.column_config.TextColumn(
+            "Date Closed",
+            default="",
         ),
     },
     # Disable editing the ID, Date Submitted, and Date Closed columns.
@@ -709,7 +735,7 @@ edited_df = st.data_editor(
 
 # Auto-stamp Date Closed the moment a ticket is set to Closed.
 needs_close_stamp = (
-    (edited_df["Status"].astype(str).str.lower() == "closed")
+    (edited_df["Resolution Status"].astype(str).str.lower() == "resolved")
     & (edited_df["Date Closed"].astype(str).str.strip() == "")
 )
 if needs_close_stamp.any():
@@ -754,53 +780,58 @@ if detail_ticket_id:
 
 # Show some metrics and charts about the ticket.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Statistics</h2></div>",
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Performance metrics</h2></div>",
     unsafe_allow_html=True,
 )
 
 # Show metrics side by side using `st.columns` and `st.metric`.
 col1, col2, col3, col4 = st.columns(4)
-num_open_tickets = len(st.session_state.df[st.session_state.df.Status == "Open"])
-avg_open_per_week = calculate_average_open_tickets_per_week(st.session_state.df)
-avg_closed_per_week = calculate_average_closed_tickets_per_week(st.session_state.df)
+open_ticket_count = calculate_open_ticket_count(st.session_state.df)
+high_priority_open_ticket_count = calculate_high_priority_open_ticket_count(
+    st.session_state.df
+)
+resolution_rate = calculate_resolution_rate(st.session_state.df)
+average_resolution_time_hours = calculate_average_resolution_time_hours(
+    st.session_state.df
+)
 
 with col1:
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Total # of open tickets</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Open ticket backlog</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(num_open_tickets) + "</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(open_ticket_count) + "</div>",
         unsafe_allow_html=True,
     )
 
 with col2:
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Average # of open tickets per week</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>High-priority open tickets</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(avg_open_per_week) + "</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(high_priority_open_ticket_count) + "</div>",
         unsafe_allow_html=True,
     )
 
 with col3:
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Average # of tickets closed per week</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Ticket resolution rate</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(avg_closed_per_week) + "</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(resolution_rate) + "%</div>",
         unsafe_allow_html=True,
     )
 
 with col4:
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>First response time (hours)</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Average resolution time (hours)</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(0) + "</div>",
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(average_resolution_time_hours) + "</div>",
         unsafe_allow_html=True,
     )
 
@@ -826,7 +857,7 @@ with left_col:
 
 with right_col:
     st.markdown(
-        "<div style='margin: 1rem 0 0.35rem 0;'><h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0;'>Ticket status per week</h3></div>",
+        "<div style='margin: 1rem 0 0.35rem 0;'><h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0;'>Resolution status per week</h3></div>",
         unsafe_allow_html=True,
     )
     status_plot = (
@@ -835,8 +866,8 @@ with right_col:
         .encode(
             x="week(Date Submitted):O",
             y="count():Q",
-            xOffset="Status:N",
-            color=alt.Color("Status:N", scale=alt.Scale(range=BRAND_COLORS)),
+            xOffset="Resolution Status:N",
+            color=alt.Color("Resolution Status:N", scale=alt.Scale(range=BRAND_COLORS)),
         )
         .configure_legend(
             orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
@@ -852,7 +883,7 @@ st.markdown(
 st.write("Post questions or updates related to a ticket's status or details.")
 
 if "ticket_comments" not in st.session_state:
-    st.session_state.ticket_comments: list[dict] = []
+    st.session_state.ticket_comments = []
 
 comment_ticket_options = (
     [""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""]

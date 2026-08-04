@@ -12,12 +12,46 @@ def get_eastern_us_timestamp() -> str:
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
 
 
+def _get_resolution_status_column(df: pd.DataFrame) -> str | None:
+    """Return the supported resolution status column name for a dataframe."""
+    if "Resolution Status" in df.columns:
+        return "Resolution Status"
+    if "Ticket Status" in df.columns:
+        return "Ticket Status"
+    return None
+
+
+def _parse_date_column(df: pd.DataFrame, date_column: str) -> pd.Series:
+    """Parse a ticket date column, accepting display timestamps and invalid values."""
+    if date_column not in df.columns:
+        return pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+
+    date_values = df[date_column].astype("string").str.replace(
+        r"\s(?:ET|EST|EDT)$", "", regex=True
+    )
+    return pd.to_datetime(date_values, format="mixed", errors="coerce")
+
+
+def _get_weekly_counts(df: pd.DataFrame, date_column: str) -> pd.Series:
+    """Return weekly counts for the provided date column after dropping invalid dates."""
+    if df.empty or date_column not in df.columns:
+        return pd.Series(dtype="int64")
+
+    parsed_dates = _parse_date_column(df, date_column)
+    valid_dates = parsed_dates.notna()
+    if not valid_dates.any():
+        return pd.Series(dtype="int64")
+
+    weekly_periods = parsed_dates[valid_dates].dt.to_period("W-MON")
+    return weekly_periods.value_counts().sort_index()
+
+
 def calculate_average_open_tickets_per_week(df: pd.DataFrame) -> float:
     """Return the average number of open tickets per week based on submitted tickets."""
     if df.empty:
         return 0.0
 
-    weekly_counts = df.groupby(pd.to_datetime(df["Date Submitted"], format="%m-%d-%Y").dt.to_period("W-MON")).size()
+    weekly_counts = _get_weekly_counts(df, "Date Submitted")
     return round(float(weekly_counts.mean()), 2) if not weekly_counts.empty else 0.0
 
 
@@ -26,33 +60,89 @@ def calculate_average_closed_tickets_per_week(df: pd.DataFrame) -> float:
     if df.empty:
         return 0.0
 
-    weekly_counts = (
-        df[df["Status"].astype(str).str.lower() == "closed"]
-        .groupby(pd.to_datetime(df.loc[df["Status"].astype(str).str.lower() == "closed", "Date Submitted"], format="%m-%d-%Y").dt.to_period("W-MON"))
-        .size()
-    )
+    status_column = _get_resolution_status_column(df)
+    if status_column is None:
+        return 0.0
+
+    resolved_df = df[df[status_column].astype(str).str.lower() == "resolved"]
+    weekly_counts = _get_weekly_counts(resolved_df, "Date Submitted")
     return round(float(weekly_counts.mean()), 2) if not weekly_counts.empty else 0.0
+
+
+def calculate_open_ticket_count(df: pd.DataFrame) -> int:
+    """Return the number of tickets that have not been resolved."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or status_column is None:
+        return 0
+
+    return int((df[status_column].astype(str).str.lower() != "resolved").sum())
+
+
+def calculate_high_priority_open_ticket_count(df: pd.DataFrame) -> int:
+    """Return the number of unresolved high-priority tickets."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or status_column is None or "Priority" not in df.columns:
+        return 0
+
+    is_open = df[status_column].astype(str).str.lower() != "resolved"
+    is_high_priority = df["Priority"].astype(str).str.lower() == "high"
+    return int((is_open & is_high_priority).sum())
+
+
+def calculate_resolution_rate(df: pd.DataFrame) -> float:
+    """Return the percentage of tickets marked resolved."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or status_column is None:
+        return 0.0
+
+    resolved_count = (df[status_column].astype(str).str.lower() == "resolved").sum()
+    return round(float(resolved_count / len(df) * 100), 2)
+
+
+def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
+    """Return average elapsed hours from submission to resolution for valid closed tickets."""
+    status_column = _get_resolution_status_column(df)
+    if (
+        df.empty
+        or status_column is None
+        or "Date Submitted" not in df.columns
+        or "Date Closed" not in df.columns
+    ):
+        return 0.0
+
+    submitted_dates = _parse_date_column(df, "Date Submitted")
+    closed_dates = _parse_date_column(df, "Date Closed")
+    resolution_hours = (closed_dates - submitted_dates).dt.total_seconds() / 3600
+    is_resolved = df[status_column].astype(str).str.lower() == "resolved"
+    valid_resolution_hours = resolution_hours[is_resolved & (resolution_hours >= 0)]
+    return round(float(valid_resolution_hours.mean()), 2) if not valid_resolution_hours.empty else 0.0
 
 
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Status", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Ticket Status"],
+        columns=["ID", "Issue", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Resolution Status"],
     )
 
 
 def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """Remove fake/random ticket rows from a dataframe before displaying or counting them."""
-    if df.empty:
+    if df.empty or "ID" not in df.columns:
         return df.copy()
 
-    cleaned = df[~df["ID"].astype(str).str.startswith(FAKE_TICKET_ID_PREFIXES)].copy()
+    ticket_ids = df["ID"].fillna("").astype(str)
+    cleaned = df[~ticket_ids.str.startswith(FAKE_TICKET_ID_PREFIXES, na=False)].copy()
+    if "Date Closed" in cleaned.columns:
+        date_closed = cleaned["Date Closed"].astype("string")
+        cleaned["Date Closed"] = date_closed.mask(
+            date_closed.str.strip().str.lower() == "empty", ""
+        )
     return cleaned.reset_index(drop=True)
 
 
 def delete_ticket_by_id(df: pd.DataFrame, ticket_id: str) -> pd.DataFrame:
     """Remove the row matching the provided ticket ID."""
-    if df.empty:
+    if df.empty or "ID" not in df.columns:
         return df.copy()
 
     return df[df["ID"].astype(str) != ticket_id].reset_index(drop=True)
@@ -60,7 +150,7 @@ def delete_ticket_by_id(df: pd.DataFrame, ticket_id: str) -> pd.DataFrame:
 
 def filter_tickets_by_id(df: pd.DataFrame, ticket_id_query: str) -> pd.DataFrame:
     """Return only the rows whose ticket IDs match the provided search text."""
-    if df.empty or not ticket_id_query:
+    if df.empty or not ticket_id_query or "ID" not in df.columns:
         return df.copy()
 
     return df[
