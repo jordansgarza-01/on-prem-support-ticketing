@@ -15,7 +15,15 @@ def test_create_initial_ticket_dataframe_starts_empty():
     df = create_initial_ticket_dataframe()
 
     assert isinstance(df, pd.DataFrame)
-    assert list(df.columns) == ["ID", "Issue", "Status", "Priority", "Date Submitted"]
+    assert list(df.columns) == [
+        "ID",
+        "Issue",
+        "Status",
+        "Priority",
+        "Date Submitted",
+        "Date Closed",
+        "Submitted By",
+    ]
     assert df.empty
 
 
@@ -132,8 +140,38 @@ def test_call_local_support_assistant_returns_printer_guidance():
     reply = streamlit_app.call_local_support_assistant("printer is offline")
 
     assert "printer" in reply.lower()
+    assert "zebra zt620" in reply.lower()
+    assert "ricoh im 460f" in reply.lower()
+
+
+def test_clear_assistant_messages_resets_conversation_history():
+    session_state = {
+        "assistant_messages": [
+            {"role": "user", "content": "old prompt"},
+            {"role": "assistant", "content": "old response"},
+        ]
+    }
+
+    streamlit_app.clear_assistant_messages(session_state)
+
+    assert session_state["assistant_messages"] == []
 
 
 def test_format_stat_value_rounds_to_two_decimals():
     assert streamlit_app.format_stat_value(3) == "3.00"
     assert streamlit_app.format_stat_value(3.456) == "3.46"
+
+
+def test_get_github_models_token_uses_gh_token_when_github_token_missing(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GH_TOKEN", "gh-token")
+
+    assert streamlit_app._get_github_models_token() == "gh-token"
+
+
+def test_get_github_models_token_uses_streamlit_secrets(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(streamlit_app.st, "secrets", {"GITHUB_TOKEN": "secret-from-secrets"}, raising=False)
+
+    assert streamlit_app._get_github_models_token() == "secret-from-secrets"

@@ -3,7 +3,6 @@ import datetime
 import importlib.util
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 import altair as alt
@@ -26,6 +25,7 @@ try:
         create_initial_ticket_dataframe,
         delete_ticket_by_id,
         filter_tickets_by_id,
+        get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
     )
 except ImportError:
@@ -52,7 +52,7 @@ except ImportError:
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
 
 st.set_page_config(
-    page_title="Support tickets",
+    page_title="Internal Support Portal",
     page_icon="💻",
 )
 
@@ -67,6 +67,7 @@ st.markdown(
     [data-baseweb="select"] > div:focus-within {{ border-color: {DEEP_BURGUNDY} !important; box-shadow: 0 0 0 1px {DEEP_BURGUNDY} !important; }}
     [data-baseweb="menu"] li:hover, [data-baseweb="menu"] li[aria-selected="true"] {{ background-color: {DARK_SLATE_CHARCOAL} !important; }}
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
+    [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -83,15 +84,14 @@ if not st.session_state.get("authenticated", False):
         "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000;'>O&M P&HS | Internal Support Portal</h1></div>",
         unsafe_allow_html=True,
     )
-    with st.form("login_form"):
-        entered_password = st.text_input("Password", type="password")
-        submitted = st.form_submit_button("Log in")
-    if submitted:
+    entered_password = st.text_input("Password", type="password")
+    login_clicked = st.button("Log in")
+    if login_clicked:
         if entered_password == APP_PASSWORD:
             st.session_state.authenticated = True
             st.rerun()
         else:
-            st.error("Incorrect password. Please try again.")
+            st.error("The password you entered is incorrect. Please try again.")
     st.stop()
 
 st.markdown(
@@ -101,8 +101,8 @@ st.markdown(
 
 st.write(
     """
-    Please feel free to use this system to get help, and/or submit a ticketing request for technical support issues pertaining to: JDA, CSW, SAP, SmartSheet, SharePoint, 
-Excel, Power Platform, Opendock Nova, continuous improvement, inventory control, quality control, industrial automation, and/or robotics.
+    Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
+Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments, wireless internet, ethernet, Bluetooth, end user credentials, MHE training, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
@@ -118,115 +118,53 @@ if (
 
 st.session_state.df = sanitize_ticket_dataframe(st.session_state.df)
 
+if "ticket_attachments" not in st.session_state:
+    st.session_state.ticket_attachments: dict[str, list[dict]] = {}
+
+
+def _to_displayable_image(data: bytes, mime: str) -> tuple[bytes, str]:
+    """Convert HEIC/HEIF bytes to JPEG; return other formats unchanged."""
+    if mime in ("image/heic", "image/heif"):
+        try:
+            import pillow_heif
+            from PIL import Image
+            import io as _io
+            pillow_heif.register_heif_opener()
+            img = Image.open(_io.BytesIO(data))
+            buf = _io.BytesIO()
+            img.convert("RGB").save(buf, format="JPEG")
+            return buf.getvalue(), "image/jpeg"
+        except Exception:
+            return data, mime
+    return data, mime
+
 
 def format_stat_value(value: float | int) -> str:
     return f"{float(value):.2f}"
 
 
-def summarize_pbix_file(uploaded_file):
-    """Read an uploaded Power BI (.pbix) file and build a summary of its tables/measures for the chat agent."""
-    try:
-        from pbixray import PBIXRay
-    except Exception as exc:
-        return None, f"(Power BI file support isn't available right now: {exc})"
-
-    tmp_path = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".pbix", delete=False) as tmp:
-            tmp.write(uploaded_file.getvalue())
-            tmp_path = tmp.name
-
-        model = PBIXRay(tmp_path)
-        table_names = list(model.tables)
-
-        lines = [
-            f"Uploaded Power BI file: {uploaded_file.name}",
-            f"Tables ({len(table_names)}): " + ", ".join(table_names),
-        ]
-
-        schema_df = model.schema
-        if schema_df is not None and not schema_df.empty and {"TableName", "ColumnName"}.issubset(schema_df.columns):
-            type_col = "DataType" if "DataType" in schema_df.columns else None
-            columns_by_table = []
-            for table_name, group in schema_df.groupby("TableName"):
-                if type_col:
-                    cols = ", ".join(f"{row.ColumnName} ({getattr(row, type_col)})" for row in group.itertuples())
-                else:
-                    cols = ", ".join(group["ColumnName"].tolist())
-                columns_by_table.append(f"{table_name}: {cols}")
-            lines.append("Columns by table:\n" + "\n".join(columns_by_table))
-
-        measures_df = model.dax_measures
-        if measures_df is not None and not measures_df.empty and "Name" in measures_df.columns:
-            measure_names = measures_df["Name"].dropna().tolist()
-            lines.append(f"DAX measures ({len(measure_names)}): " + ", ".join(measure_names[:30]))
-
-        summary_text = "\n".join(lines)
-        if len(summary_text) > 4000:
-            summary_text = summary_text[:4000] + "\n...(truncated)"
-        meta = {"name": uploaded_file.name, "kind": "pbix", "rows": len(table_names), "columns": len(table_names)}
-        return meta, summary_text
-    except Exception as exc:
-        return None, f"(Could not read the uploaded Power BI file '{uploaded_file.name}': {exc})"
-    finally:
-        if tmp_path:
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
 
 
-def summarize_uploaded_data_file(uploaded_file):
-    """Read an uploaded Excel/CSV/SmartSheet-export/Power BI file and build a summary for the chat agent."""
-    lowered_name = uploaded_file.name.lower()
-    if lowered_name.endswith(".pbix"):
-        return summarize_pbix_file(uploaded_file)
 
-    try:
-        if lowered_name.endswith(".csv"):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
-    except Exception as exc:
-        return None, f"(Could not read the uploaded file '{uploaded_file.name}': {exc})"
-
-    lines = [
-        f"Uploaded file: {uploaded_file.name}",
-        f"Rows: {len(df)}, Columns: {len(df.columns)}",
-        "Column names and types: " + ", ".join(f"{col} ({dtype})" for col, dtype in df.dtypes.items()),
-    ]
-    missing = df.isna().sum()
-    missing_cols = [f"{col}: {count}" for col, count in missing.items() if count > 0]
-    if missing_cols:
-        lines.append("Missing values: " + ", ".join(missing_cols))
-    numeric_df = df.select_dtypes(include="number")
-    if not numeric_df.empty:
-        lines.append("Numeric summary:\n" + numeric_df.describe().round(2).to_string())
-    lines.append("First rows:\n" + df.head(5).to_string(index=False))
-
-    summary_text = "\n".join(lines)
-    if len(summary_text) > 4000:
-        summary_text = summary_text[:4000] + "\n...(truncated)"
-    meta = {"name": uploaded_file.name, "kind": "tabular", "rows": len(df), "columns": len(df.columns)}
-    return meta, summary_text
-
-
-def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> str:
+def call_local_support_assistant(prompt: str) -> str:
     prompt_text = (prompt or "support request").strip()
     lowered_prompt = prompt_text.lower()
 
-    if data_meta and data_meta.get("kind") == "pbix":
-        data_file_note = f"I can see you uploaded the Power BI file {data_meta['name']} with {data_meta['columns']} table(s). "
-    elif data_meta:
-        data_file_note = f"I can see you uploaded {data_meta['name']} ({data_meta['rows']} rows, {data_meta['columns']} columns). "
-    else:
-        data_file_note = ""
-
-    if any(term in lowered_prompt for term in ["printer", "print"]):
+    if any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "copier", "copy", "scan", "fax", "mfp", "multi-function"]):
+        zebra_tip = (
+            "For a Zebra ZT620 label printer: check that the label roll is loaded correctly and the media type/size in the printer settings matches the labels you're using. "
+            "If labels are printing blank or misaligned, run calibration from the printer front panel (hold Feed + Cancel on power-up). "
+            "If the printer shows a fault light, note the color pattern and include it in your ticket."
+        )
+        ricoh_tip = (
+            "For a Ricoh IM 460F multi-function printer: if it will not print, check the touchscreen for any error or paper-jam indicators and clear them first. "
+            "For scan-to-email or scan-to-folder issues, verify network connectivity and confirm the destination address or folder path is still correct. "
+            "For fax issues, check that the phone line is connected to the LINE port (not TEL), then power cycle the unit from the power button."
+        )
         return (
-            "Hey! Sounds like your printer is giving you trouble. First, make sure it's turned on and all the cables are plugged in (or that it's connected to the Wi-Fi). "
-            "Check that there's paper in the tray and nothing is jammed. If it still won't print, try turning it off, waiting 10 seconds, and turning it back on. "
-            "If that doesn't fix it, go ahead and submit a ticket and someone will come take a look!"
+            "Sounds like a printer issue. I can help you troubleshoot either a Zebra ZT620 label printer or a Ricoh IM 460F multi-function printer. "
+            + zebra_tip + " " + ricoh_tip +
+            " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
         )
 
     if any(term in lowered_prompt for term in ["wifi", "wi-fi", "wireless", "network", "connect", "internet"]):
@@ -238,10 +176,18 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
 
     if any(term in lowered_prompt for term in [
         "radio", "rf", "rfid", "bluetooth", "scanner", "device", "peripheral",
+        "honeywell", "ct47", "ct 47", "handheld",
         "keyboard", "mouse", "mice", "monitor", "webcam", "headset", "headphones",
         "microphone", "speaker", "usb", "docking station", "external drive",
     ]):
         peripheral_tips = []
+        if any(term in lowered_prompt for term in ["rf", "rfid", "radio", "scanner", "honeywell", "ct47", "ct 47", "handheld"]):
+            peripheral_tips.append(
+                "For a Honeywell CT47 handheld RFID device: start with a clean reboot — hold the power button and select Reboot. "
+                "If it won't connect to the network, go to Settings > Network & Internet, forget the Wi-Fi network, and reconnect. "
+                "If the scanner isn't reading tags or barcodes, clean the scan window and make sure you're within the rated read range. "
+                "If the device is frozen or the battery drains unusually fast, a factory-image reboot from IT may be needed — submit a ticket and we'll take care of it."
+            )
         if any(term in lowered_prompt for term in ["keyboard", "mouse", "mice"]):
             peripheral_tips.append(
                 "If it's a keyboard or mouse, check the batteries (if wireless) and try a different USB port or re-pairing it."
@@ -310,7 +256,6 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
 
     if any(term in lowered_prompt for term in ["data", "analysis", "analyze", "trend", "chart", "graph", "dashboard", "metric", "kpi"]):
         return (
-            data_file_note +
             "Need help making sense of your data? You're in the right place! "
             "Whether you need a simple summary, a chart, or a full dashboard, we can help you figure out the best way to show what's going on. "
             "Tell us what data you have and what question you're trying to answer, then submit a ticket and we'll take it from there!"
@@ -318,18 +263,14 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
 
     if any(term in lowered_prompt for term in ["power bi", "powerbi", "bi report", "bi dashboard", "power platform", "power apps", "power automate", "power pages", "powerapps", "pbix", "q&a", "qna", "q and a"]):
         return (
-            data_file_note +
-            "Power Platform question (Power BI, Power Apps, Power Automate, or Power Pages)? No problem! "
+            "Power Platform question (Power BI, Power Apps, Power Automate, or Power Pages)? We are happy to help. "
             "If a report, app, or flow isn't loading or the numbers/behavior look off, try refreshing the page or signing out and back in. "
             "If a flow (Power Automate) stopped running, check if it's been turned off or hit an error — that's usually shown right on the flow's run history. "
-            "Want help with a Q&A-style question (like Power BI's natural-language 'ask a question' feature)? Just type it in plain English — e.g. 'total sales by region' — "
-            "and if you've attached a .pbix file, I'll use its tables and measures to answer as specifically as I can. "
             "If you need something new built or changed, just describe what you want to see — even a rough sketch on paper works — and submit a ticket. We'll build it out for you!"
         )
 
     if any(term in lowered_prompt for term in ["smartsheet", "smart sheet"]):
         return (
-            data_file_note +
             "SmartSheet question? Got it! If a sheet, report, or dashboard isn't updating, try refreshing the page first — sometimes it just needs a moment to sync. "
             "If a formula or automation (like an alert or approval workflow) isn't firing right, double-check the trigger conditions match what you expect. "
             "Submit a ticket with the sheet name and what looks wrong, and we'll dig in with you!"
@@ -349,6 +290,21 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
             "Submit a ticket and we'll get your scheduling back on track!"
         )
 
+    if any(term in lowered_prompt for term in ["ukg", "kronos", "timecard", "time card", "punch", "time punch", "time clock", "schedule", "shift", "time off", "pto", "absence"]):
+        return (
+            "UKG (timecard/scheduling) question? Got it! If your timecard looks wrong or a punch didn't record, "
+            "first check whether the missed punch can be corrected by your supervisor directly in UKG — most sites allow manager edits before payroll closes. "
+            "If a schedule, shift, or time-off request isn't showing up right, double-check the effective date and that it was approved, not just submitted. "
+            "Submit a ticket with your employee ID, the affected date(s), and a description of what looks wrong and we'll get it sorted!"
+        )
+
+    if any(term in lowered_prompt for term in ["workday", "hris", "hr system", "payroll", "onboarding", "offboarding", "benefits", "direct deposit", "w-2", "w2", "tax form", "employee profile", "org chart", "job change", "position"]):
+        return (
+            "Workday (HRIS) question? Happy to help! If you’re having trouble logging in, try resetting your password through the Workday login page or your SSO portal. "
+            "For payroll, benefits, or personal info changes (like direct deposit or address updates), those are usually self-service in Workday under your profile — look for the ‘Pay’ or ‘Benefits’ worklets. "
+            "If something looks wrong on your paycheck, W-2, or employee record, or if you need help with onboarding/offboarding tasks, submit a ticket with your employee ID and the specific issue and we’ll connect you with the right team!"
+        )
+
     if any(term in lowered_prompt for term in ["automation", "plc", "scada", "conveyor", "sortation", "sorter", "industrial control"]):
         return (
             "Industrial automation issue? Let's get it moving again! If a conveyor, sorter, or PLC-controlled system faulted out, check for a visible fault code or e-stop that's been triggered first. "
@@ -356,17 +312,20 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
             "Note the fault code or what you're seeing, then submit a ticket so a technician can take a closer look!"
         )
 
-    if any(term in lowered_prompt for term in ["robot", "robotics", "cobot", "agv", "amr"]):
+    if any(term in lowered_prompt for term in ["robot", "robotics", "cobot", "agv", "amr", "haipick", "hai pick", "hai robotics", "acr", "a3", "a3s", "a3el"]):
         return (
-            "Robotics question? Interesting! If a robot or AGV/AMR stopped or is acting oddly, check for an obvious safety stop, blocked path, or error light first. "
-            "Most of these systems are built to pause safely rather than force through a problem, so a stopped robot is often just waiting for a clear path or a reset. "
-            "Note what it was doing and any error shown, then submit a ticket and we'll get a technician on it!"
+            "Robotics question — sounds like it could be a HaiPick system! "
+            "If a HaiPick ACR (like an A3, A3S, or A3EL unit) has stopped mid-task, first check whether a safety stop or e-stop was triggered — the robot's status light will flash amber or red if so. "
+            "Clear any obstructions from the travel path and check the HAI Robotics management console (RCS) for an active alarm or fault code before attempting a manual reset. "
+            "If the RCS shows a charging fault, verify the charging station contacts are clean and the robot is correctly docked. "
+            "For bin-retrieval errors or WMS integration issues (e.g., tasks queuing but not executing), check the RCS task queue and confirm the WMS interface is still connected. "
+            "Never manually move a stopped unit without first confirming in the RCS that it is safe to do so. "
+            "Note the robot ID, fault code, and what it was doing when it stopped, then submit a ticket and we'll get a technician on it!"
         )
 
     if any(term in lowered_prompt for term in ["excel", "spreadsheet", "formula", "pivot", "vlookup", "macro"]):
         return (
-            data_file_note +
-            "Excel question? Love it! Whether it's a formula that's not working, a pivot table that looks wrong, or you need help automating something, we can help. "
+            "Excel question? We can help with that. Whether a formula is not working, a pivot table looks incorrect, or you need help automating a task, we are here to assist. "
             "If you're getting an error, take a screenshot of it and include it in your ticket. "
             "If you need something built from scratch, just describe what you're trying to do in plain terms and we'll figure out the best way to do it!"
         )
@@ -440,8 +399,8 @@ def call_local_support_assistant(prompt: str, data_meta: dict | None = None) -> 
         )
 
     return (
-        "Hey there! I'm Owen, your support helper. I can help with tech issues, hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, "
-        "inventory control, quality control, industrial automation, robotics, SPC, SQC, and more. "
+        "Hello! I am Owen, your support assistant. I can help with technical issues involving hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, UKG, Workday, "
+        "inventory control, quality control, industrial automation, HaiPick robotics (HAI Robotics ACR systems), SPC, SQC, and more. "
         "Just describe what's going on in your own words — no technical jargon needed — and I'll point you in the right direction. "
         "If we need to dig deeper, just submit a ticket and our team will come to you!"
     )
@@ -453,18 +412,22 @@ GITHUB_MODELS_MODEL = "gpt-4o-mini"
 GITHUB_MODELS_SYSTEM_PROMPT = (
     "You are Owen, an internal on-prem technical support agent with expert-level knowledge across the following systems and topics: "
     "everyday tech issues (printers, Wi-Fi, devices, logins); computer hardware (laptops, desktops, monitors, batteries, "
-    "cables, ports, and internal components like RAM, CPU, and hard drives); software (applications, installs, updates, "
+    "cables, ports, and internal components like RAM, CPU, and hard drives); "
+    "label printers (specifically the Zebra ZT620 — label loading, calibration, fault lights, and media settings); "
+    "multi-function printers (specifically the Ricoh IM 460F — printing, copying, scanning, faxing, scan-to-email/folder, and power-cycle troubleshooting); "
+    "RFID and barcode handheld devices (specifically the Honeywell CT47 — reboots, Wi-Fi reconnection, scan window cleaning, and factory-image requests); "
+    "software (applications, installs, updates, "
     "licensing, drivers, crashes, and error messages); peripherals (keyboards, mice, webcams, headsets, docking stations, "
     "and USB devices); the Blue Yonder/JDA warehouse management system (WMS); "
     "the Client Server Warehousing (CSW) WMS; SAP; SmartSheet; SharePoint; Excel; Microsoft Power Platform "
-    "(Power BI, Power Apps, Power Automate, and Power Pages); Opendock Nova dock scheduling; continuous improvement; "
+    "(Power BI, Power Apps, Power Automate, and Power Pages); Opendock Nova dock scheduling; "
+    "UKG (timecard management, scheduling, time-off requests, and punch corrections); "
+    "Workday HRIS (payroll, benefits, direct deposit, W-2s, employee profiles, onboarding/offboarding, and org changes); "
+    "continuous improvement; "
     "warehouse-centric inventory control; quality control; industrial automation (PLCs, SCADA, conveyors, sortation); "
-    "robotics (AGVs, AMRs, cobots); statistical process control (SPC); and statistical quality control (SQC). "
-    "You are also an expert in data science, analytics, and reporting — especially Excel, SmartSheet, and Power BI — and users "
-    "may upload a CSV, Excel, or Power BI (.pbix) file for you to analyze. When a data summary is provided in a system message, "
-    "use it to answer the user's data, analytics, or reporting question as specifically as possible (e.g., referencing actual "
-    "column names, table names, DAX measures, row counts, or trends from the summary). You can also answer natural-language "
-    "Q&A-style questions about the data, similar to Power BI's built-in Q&A feature. "
+    "robotics — specifically the HAI Robotics HaiPick suite of Autonomous Case-handling Robots (ACRs), including the A3, A3S, and A3EL models "
+    "(covering RCS console alarms, fault codes, e-stop and safety-stop recovery, charging station issues, travel-path obstructions, bin-retrieval errors, and WMS/RCS integration); "
+    "statistical process control (SPC); and statistical quality control (SQC). "
     "Answer with the depth and accuracy of a subject-matter expert on each of these topics, but always translate that "
     "expertise into casual, plain, layman's terms for a non-technical audience — avoid jargon, and explain any "
     "technical term you do use. Keep replies short and conversational. Do not mention ticket counts or system context. "
@@ -475,9 +438,28 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
 )
 
 
+def _get_github_models_token() -> str | None:
+    for env_key in ("GITHUB_TOKEN", "GH_TOKEN", "OPENAI_API_KEY"):
+        token = os.environ.get(env_key)
+        if token and str(token).strip():
+            return str(token).strip()
+
+    secrets = getattr(st, "secrets", None)
+    if secrets is not None:
+        for secret_key in ("GITHUB_TOKEN", "GH_TOKEN", "OPENAI_API_KEY"):
+            try:
+                token = secrets.get(secret_key)
+            except Exception:
+                token = None
+            if token and str(token).strip():
+                return str(token).strip()
+
+    return None
+
+
 @st.cache_resource(show_spinner=False)
 def _get_github_models_client():
-    token = os.environ.get("GITHUB_TOKEN")
+    token = _get_github_models_token()
     if not token:
         return None
     try:
@@ -487,19 +469,14 @@ def _get_github_models_client():
         return None
 
 
-def call_github_models_support_assistant(prompt: str, data_context: str | None = None) -> str | None:
+def call_github_models_support_assistant(prompt: str) -> str | None:
     """Try GitHub Models first; return None so callers can fall back to the local assistant."""
     client = _get_github_models_client()
     if client is None:
         return None
 
-    messages = [{"role": "system", "content": GITHUB_MODELS_SYSTEM_PROMPT}]
-    if data_context:
-        messages.append({
-            "role": "system",
-            "content": "The user has uploaded a data file. Here is a summary to use when answering:\n" + data_context,
-        })
-    messages.append({"role": "user", "content": prompt})
+    messages = [{'role': 'system', 'content': GITHUB_MODELS_SYSTEM_PROMPT}]
+    messages.append({'role': 'user', 'content': prompt})
 
     try:
         response = client.chat.completions.create(
@@ -512,11 +489,16 @@ def call_github_models_support_assistant(prompt: str, data_context: str | None =
         return None
 
 
-def get_assistant_reply(prompt: str, data_context: str | None = None, data_meta: dict | None = None) -> str:
-    llm_reply = call_github_models_support_assistant(prompt, data_context=data_context)
+def get_assistant_reply(prompt: str) -> str:
+    llm_reply = call_github_models_support_assistant(prompt)
     if llm_reply:
         return llm_reply
-    return call_local_support_assistant(prompt, data_meta=data_meta)
+    return call_local_support_assistant(prompt)
+
+
+def clear_assistant_messages(session_state: dict) -> None:
+    """Clear the visible assistant conversation history for a fresh prompt."""
+    session_state["assistant_messages"] = []
 
 
 if "assistant_messages" not in st.session_state:
@@ -545,7 +527,7 @@ with assistant_container:
         "display: flex; flex-direction: column; justify-content: center;'>"
         "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1rem; font-weight: 700; color: #111111; margin-bottom: 0.35rem;'>Ask Owen — Your On-Prem Technical Support Agent</div>"
         "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #333333; line-height: 1.45;'>"
-        "After hours? No problem! Owen is always available locally to help with radio, printer, RFID, Bluetooth, Wi-Fi, WMS, Excel, Power BI, and other technical issues. Just ask!"
+        "After hours? Not a problem! Owen is always available locally to assist with an array of Tier-1 technical support issues. Just ask."
         "</div></div>"
         "</div>",
         unsafe_allow_html=True,
@@ -561,34 +543,18 @@ with assistant_container:
         with st.chat_message(message["role"], avatar=None):
             st.markdown(message["content"])
 
-    chat_submission = st.chat_input(
-        "What seems to be the problem? (Attach a reference file, if need be)",
-        accept_file=True,
-        file_type=["xlsx", "xls", "csv", "pbix"],
-    )
+    chat_submission = st.chat_input("How may I help you today?")
     if chat_submission:
-        prompt = (chat_submission.text or "").strip()
-        attached_files = chat_submission.files
+        prompt = (chat_submission or "").strip()
 
-        if attached_files:
-            attached_file = attached_files[0]
-            data_meta, data_summary = summarize_uploaded_data_file(attached_file)
-            st.session_state.uploaded_file_meta = data_meta
-            st.session_state.uploaded_file_summary = data_summary
-            if not prompt:
-                prompt = f"Please analyze the attached file '{attached_file.name}'."
-
+        clear_assistant_messages(st.session_state)
         st.session_state.assistant_messages.append({"role": "user", "content": prompt})
         with st.chat_message("user", avatar=None):
             st.markdown(prompt)
 
         try:
-            with st.spinner("Thinking..."):
-                reply = get_assistant_reply(
-                    prompt,
-                    data_context=st.session_state.get("uploaded_file_summary"),
-                    data_meta=st.session_state.get("uploaded_file_meta"),
-                )
+            with st.spinner("Processing your request..."):
+                reply = get_assistant_reply(prompt)
             st.session_state.assistant_messages.append({"role": "assistant", "content": reply})
             with st.chat_message("assistant", avatar=None):
                 st.markdown(reply)
@@ -602,13 +568,22 @@ with assistant_container:
 
 
 # Show a section to add a new ticket.
-st.header("Submit a ticket")
+st.markdown(
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Submit a ticket</h2></div>",
+    unsafe_allow_html=True,
+)
 
 # We're adding tickets via an `st.form` and some input widgets. If widgets are used
 # in a form, the app will only rerun once the submit button is pressed.
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+    submitted_by = st.text_input("Submitted By", placeholder="Enter your name")
+    attachment_files = st.file_uploader(
+        "attachments (optional)",
+        type=["heic", "heif", "jpeg", "jpg", "png"],
+        accept_multiple_files=True,
+    )
     submitted = st.form_submit_button("Submit")
 
 if submitted:
@@ -616,18 +591,27 @@ if submitted:
     recent_ticket_number = (
         int(max(st.session_state.df.ID).split("-")[1]) if not st.session_state.df.empty else 999
     )
-    today = datetime.datetime.now().strftime("%m-%d-%Y")
+    submitted_at = get_eastern_us_timestamp()
+    new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
     df_new = pd.DataFrame(
         [
             {
-                "ID": f"TICKET-{recent_ticket_number + 1}",
+                "ID": new_ticket_id,
                 "Issue": issue.strip() if issue else "No description provided.",
                 "Status": "Open",
                 "Priority": priority,
-                "Date Submitted": today,
+                "Date Submitted": submitted_at,
+                "Date Closed": "",
+                "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
             }
         ]
     )
+
+    if attachment_files:
+        st.session_state.ticket_attachments[new_ticket_id] = [
+            {"name": f.name, "data": f.read(), "mime": f.type or "application/octet-stream"}
+            for f in attachment_files
+        ]
 
     # Show a little success message.
     st.write("Ticket submitted successfully. Here are the pertinent details:")
@@ -635,7 +619,10 @@ if submitted:
     st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
 
 # Show section to view and edit existing tickets in a table.
-st.header("Existing tickets")
+st.markdown(
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Existing tickets</h2></div>",
+    unsafe_allow_html=True,
+)
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
 
 search_term = st.text_input("Search tickets by ticket number", placeholder="e.g. TICKET-1010")
@@ -651,6 +638,10 @@ selected_ticket_id = st.selectbox(
 
 if st.button("Delete selected ticket") and selected_ticket_id:
     st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
+    st.session_state.ticket_attachments.pop(selected_ticket_id, None)
+    st.session_state.ticket_comments = [
+        c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
+    ]
     st.success(f"Deleted {selected_ticket_id}.")
     st.rerun()
 
@@ -674,11 +665,54 @@ edited_df = st.data_editor(
             required=True,
         ),
     },
-    # Disable editing the ID and Date Submitted columns.
-    disabled=["ID", "Date Submitted"],
+    # Disable editing the ID, Date Submitted, and Date Closed columns.
+    disabled=["ID", "Date Submitted", "Date Closed"],
 )
 
+# Auto-stamp Date Closed the moment a ticket is set to Closed.
+needs_close_stamp = (
+    (edited_df["Status"].astype(str).str.lower() == "closed")
+    & (edited_df["Date Closed"].astype(str).str.strip() == "")
+)
+if needs_close_stamp.any():
+    edited_df.loc[needs_close_stamp, "Date Closed"] = get_eastern_us_timestamp()
+
 st.session_state.df = edited_df
+
+# Ticket detail: show attachments for a selected ticket.
+st.markdown(
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Ticket attachments</h2></div>",
+    unsafe_allow_html=True,
+)
+ticket_ids_with_attachments = [
+    tid for tid in st.session_state.df["ID"].astype(str).tolist()
+    if tid in st.session_state.ticket_attachments
+]
+detail_ticket_id = st.selectbox(
+    "Select a ticket to view its attachments",
+    options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
+    index=0,
+    key="detail_ticket_selectbox",
+)
+
+if detail_ticket_id:
+    attachments = st.session_state.ticket_attachments.get(detail_ticket_id, [])
+    if attachments:
+        st.write(f"{len(attachments)} attachment(s) for **{detail_ticket_id}**:")
+        for attachment in attachments:
+            display_data, display_mime = _to_displayable_image(attachment["data"], attachment["mime"])
+            if display_mime in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                st.image(display_data, caption=attachment["name"])
+            else:
+                # Browser cannot render this format; offer a download instead.
+                st.download_button(
+                    label=f"Download {attachment['name']}",
+                    data=attachment["data"],
+                    file_name=attachment["name"],
+                    mime=attachment["mime"],
+                )
+    else:
+        st.info(f"No attachments for {detail_ticket_id}.")
 
 # Show some metrics and charts about the ticket.
 st.markdown(
@@ -771,3 +805,61 @@ with right_col:
         )
     )
     st.altair_chart(status_plot, width="stretch", theme="streamlit")
+
+# Comments section for ticket Q&A.
+st.markdown(
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Comments</h2></div>",
+    unsafe_allow_html=True,
+)
+st.write("Post questions or updates related to a ticket's status or details.")
+
+if "ticket_comments" not in st.session_state:
+    st.session_state.ticket_comments: list[dict] = []
+
+comment_ticket_options = (
+    [""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""]
+)
+comment_ticket_id = st.selectbox(
+    "Select a ticket",
+    options=comment_ticket_options,
+    index=0,
+    key="comment_ticket_selectbox",
+)
+comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
+comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
+
+if st.button("Post comment"):
+    if not comment_ticket_id:
+        st.warning("Please select a ticket.")
+    elif not comment_username.strip():
+        st.warning("Please enter your name.")
+    elif not comment_text.strip():
+        st.warning("Please enter a comment.")
+    else:
+        st.session_state.ticket_comments.append({
+            "ticket_id": comment_ticket_id,
+            "username": comment_username.strip(),
+            "comment": comment_text.strip(),
+            "timestamp": get_eastern_us_timestamp(),
+        })
+        st.success("Comment posted.")
+        st.rerun()
+
+# Display existing comments, newest first.
+ticket_comments_to_show = [
+    c for c in reversed(st.session_state.ticket_comments)
+    if not comment_ticket_id or c["ticket_id"] == comment_ticket_id
+]
+if ticket_comments_to_show:
+    for entry in ticket_comments_to_show:
+        st.markdown(
+            f"<div style='border: 1px solid #D9D9D9; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.6rem; background: #fafafa;'>"
+            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.82rem; color: #555; margin-bottom: 0.25rem;'>"
+            f"<strong style='color: #111;'>{entry['username']}</strong> &nbsp;·&nbsp; {entry['ticket_id']} &nbsp;·&nbsp; {entry['timestamp']}"
+            f"</div>"
+            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #222;'>{entry['comment']}</div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+elif comment_ticket_id:
+    st.info(f"No comments yet for {comment_ticket_id}.")

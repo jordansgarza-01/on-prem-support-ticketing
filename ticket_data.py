@@ -3,6 +3,12 @@ import datetime as dt
 import pandas as pd
 
 
+def get_eastern_us_timestamp() -> str:
+    """Return the current timestamp formatted for Eastern US time."""
+    eastern = dt.datetime.now(dt.timezone.utc).astimezone(dt.timezone(dt.timedelta(hours=-4)))
+    return eastern.strftime("%Y-%m-%d %H:%M:%S ET")
+
+
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
 
 
@@ -31,7 +37,7 @@ def calculate_average_closed_tickets_per_week(df: pd.DataFrame) -> float:
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Status", "Priority", "Date Submitted"],
+        columns=["ID", "Issue", "Status", "Priority", "Date Submitted", "Date Closed", "Submitted By"],
     )
 
 
