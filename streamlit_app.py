@@ -580,7 +580,7 @@ with st.form("add_ticket_form"):
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted By", placeholder="Enter your name")
     attachment_files = st.file_uploader(
-        "attachments (optional)",
+        "Attachments (Optional)",
         type=["heic", "heif", "jpeg", "jpg", "png"],
         accept_multiple_files=True,
     )
