@@ -102,7 +102,7 @@ st.markdown(
 st.write(
     """
     Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments, wireless internet, ethernet, Bluetooth, end user credentials, MHE training, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
+Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, MHE training, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
