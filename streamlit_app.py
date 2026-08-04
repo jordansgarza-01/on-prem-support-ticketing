@@ -107,7 +107,7 @@ Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID de
 )
 
 # Create the starter dataframe and reset it when the app data version changes.
-TICKET_DATA_VERSION = 2
+TICKET_DATA_VERSION = 3
 if (
     "df" not in st.session_state
     or "ticket_data_version" not in st.session_state
@@ -603,6 +603,8 @@ if submitted:
                 "Date Submitted": submitted_at,
                 "Date Closed": "",
                 "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
+                "Assigned To": "",
+                "Ticket Status": "Pending",
             }
         ]
     )
@@ -645,8 +647,34 @@ if st.button("Delete selected ticket") and selected_ticket_id:
     st.success(f"Deleted {selected_ticket_id}.")
     st.rerun()
 
-# Show the tickets dataframe with `st.data_editor`. This lets the user edit the table
-# cells. The edited data is returned as a new dataframe.
+# Color-coded read-only view of Ticket Status.
+_STATUS_STYLES = {
+    "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
+    "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
+    "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
+}
+
+def _style_ticket_status_col(col):
+    return col.map(lambda v: _STATUS_STYLES.get(v, ""))
+
+if not filtered_df.empty and "Ticket Status" in filtered_df.columns:
+    styled_view = filtered_df.style.apply(_style_ticket_status_col, subset=["Ticket Status"], axis=0)
+    st.markdown(
+        "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
+        "Status legend: "
+        "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Pending</span>"
+        "<span style='background:#fff3cd;color:#856404;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>In Process</span>"
+        "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>Resolved</span>"
+        "</span></div>",
+        unsafe_allow_html=True,
+    )
+    st.dataframe(styled_view, use_container_width=True, hide_index=True)
+
+# Editable table — use data_editor for all field edits.
+st.markdown(
+    "<div style='margin: 1rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: #333;'>Edit tickets</span></div>",
+    unsafe_allow_html=True,
+)
 edited_df = st.data_editor(
     filtered_df,
     width="stretch",
@@ -662,6 +690,16 @@ edited_df = st.data_editor(
             "Priority",
             help="Priority",
             options=["High", "Medium", "Low"],
+            required=True,
+        ),
+        "Assigned To": st.column_config.TextColumn(
+            "Assigned To",
+            help="Person assigned to this ticket",
+        ),
+        "Ticket Status": st.column_config.SelectboxColumn(
+            "Ticket Status",
+            help="Current ticket status",
+            options=["Pending", "In Process", "Resolved"],
             required=True,
         ),
     },

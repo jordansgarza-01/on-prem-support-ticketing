@@ -37,7 +37,7 @@ def calculate_average_closed_tickets_per_week(df: pd.DataFrame) -> float:
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Status", "Priority", "Date Submitted", "Date Closed", "Submitted By"],
+        columns=["ID", "Issue", "Status", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Ticket Status"],
     )
 
 
