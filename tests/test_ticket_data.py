@@ -307,7 +307,16 @@ def test_call_local_support_assistant_returns_printer_guidance():
 
     assert "printer" in reply.lower()
     assert "zebra zt620" in reply.lower()
+    assert "honeywell rp4d" in reply.lower()
     assert "ricoh im 460f" in reply.lower()
+
+
+def test_call_local_support_assistant_returns_rp4d_guidance():
+    reply = streamlit_app.call_local_support_assistant("My Honeywell RP4D will not print")
+
+    assert "honeywell rp4d" in reply.lower()
+    assert "battery" in reply.lower()
+    assert "re-pair" in reply.lower()
 
 
 def test_get_assistant_reply_does_not_call_github_models(monkeypatch):

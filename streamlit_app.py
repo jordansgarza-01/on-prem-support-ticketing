@@ -72,6 +72,13 @@ st.set_page_config(
     page_icon="💻",
 )
 
+if components_html is not None:
+    components_html(
+        "<script>window.parent.document.title = 'Internal Support Portal';</script>",
+        height=0,
+        width=0,
+    )
+
 DEEP_BURGUNDY = "#7A1F2D"
 DARK_SLATE_CHARCOAL = "#2F3A3F"
 
@@ -84,6 +91,7 @@ st.markdown(
     [data-baseweb="menu"] li:hover, [data-baseweb="menu"] li[aria-selected="true"] {{ background-color: {DARK_SLATE_CHARCOAL} !important; }}
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
+    [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -118,7 +126,7 @@ st.markdown(
 st.write(
     """
     Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG, Workday, Honeywell CT47 model RFID devices, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
+Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model RFID devices, Honeywell RP4D mobile printers, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
@@ -171,11 +179,17 @@ def call_local_support_assistant(prompt: str) -> str:
     prompt_text = (prompt or "support request").strip()
     lowered_prompt = prompt_text.lower()
 
-    if any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "copier", "copy", "scan", "fax", "mfp", "multi-function"]):
+    if any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "honeywell", "rp4d", "mobile printer", "copier", "copy", "scan", "fax", "mfp", "multi-function"]):
         zebra_tip = (
             "For a Zebra ZT620 label printer: check that the label roll is loaded correctly and the media type/size in the printer settings matches the labels you're using. "
             "If labels are printing blank or misaligned, run calibration from the printer front panel (hold Feed + Cancel on power-up). "
             "If the printer shows a fault light, note the color pattern and include it in your ticket."
+        )
+        rp4d_tip = (
+            "For a Honeywell RP4D mobile printer: confirm the battery is charged and fully seated, then restart the printer. "
+            "Check that the paper roll is loaded with the printable side facing the print head and that the cover is latched. "
+            "If it will not connect, turn Bluetooth or Wi-Fi off and back on, then re-pair the printer with the handheld device. "
+            "Run a test label from the printer settings and include any status-light pattern or error message in your ticket."
         )
         ricoh_tip = (
             "For a Ricoh IM 460F multi-function printer: if it will not print, check the touchscreen for any error or paper-jam indicators and clear them first. "
@@ -183,8 +197,8 @@ def call_local_support_assistant(prompt: str) -> str:
             "For fax issues, check that the phone line is connected to the LINE port (not TEL), then power cycle the unit from the power button."
         )
         return (
-            "Sounds like a printer issue. I can help you troubleshoot either a Zebra ZT620 label printer or a Ricoh IM 460F multi-function printer. "
-            + zebra_tip + " " + ricoh_tip +
+            "Sounds like a printer issue. I can help you troubleshoot a Zebra ZT620 label printer, Honeywell RP4D mobile printer, or Ricoh IM 460F multi-function printer. "
+            + zebra_tip + " " + rp4d_tip + " " + ricoh_tip +
             " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
         )
 
@@ -701,7 +715,15 @@ if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
         "</span></div>",
         unsafe_allow_html=True,
     )
-    st.dataframe(styled_view, use_container_width=True, hide_index=True)
+    st.dataframe(
+        styled_view,
+        use_container_width=True,
+        hide_index=True,
+        row_height=72,
+        column_config={
+            "Issue": st.column_config.TextColumn("Issue", width="large"),
+        },
+    )
 
 # Editable table — use data_editor for all field edits.
 st.markdown(
@@ -799,7 +821,7 @@ if detail_ticket_id:
 
 # Show some metrics and charts about the ticket.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Performance metrics</h2></div>",
+    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Statistics</h2></div>",
     unsafe_allow_html=True,
 )
 
