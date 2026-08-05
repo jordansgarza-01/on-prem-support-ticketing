@@ -313,16 +313,16 @@ def call_local_support_assistant(prompt: str) -> str:
 
     if any(term in lowered_prompt for term in ["ukg", "kronos", "timecard", "time card", "punch", "time punch", "time clock", "schedule", "shift", "time off", "pto", "absence"]):
         return (
-            "UKG (timecard/scheduling) question? Got it! If your timecard looks wrong or a punch didn't record, "
-            "first check whether the missed punch can be corrected by your supervisor directly in UKG — most sites allow manager edits before payroll closes. "
+            "UKG WFM (timecard/scheduling) question? Got it! If your timecard looks wrong or a punch didn't record, "
+            "first check whether the missed punch can be corrected by your supervisor directly in UKG WFM — most sites allow manager edits before payroll closes. "
             "If a schedule, shift, or time-off request isn't showing up right, double-check the effective date and that it was approved, not just submitted. "
             "Submit a ticket with your employee ID, the affected date(s), and a description of what looks wrong and we'll get it sorted!"
         )
 
     if any(term in lowered_prompt for term in ["workday", "hris", "hr system", "payroll", "onboarding", "offboarding", "benefits", "direct deposit", "w-2", "w2", "tax form", "employee profile", "org chart", "job change", "position"]):
         return (
-            "Workday (HRIS) question? Happy to help! If you’re having trouble logging in, try resetting your password through the Workday login page or your SSO portal. "
-            "For payroll, benefits, or personal info changes (like direct deposit or address updates), those are usually self-service in Workday under your profile — look for the ‘Pay’ or ‘Benefits’ worklets. "
+            "Workday HCM question? Happy to help! If you’re having trouble logging in, try resetting your password through the Workday HCM login page or your SSO portal. "
+            "For payroll, benefits, or personal info changes (like direct deposit or address updates), those are usually self-service in Workday HCM under your profile — look for the ‘Pay’ or ‘Benefits’ worklets. "
             "If something looks wrong on your paycheck, W-2, or employee record, or if you need help with onboarding/offboarding tasks, submit a ticket with your employee ID and the specific issue and we’ll connect you with the right team!"
         )
 
@@ -420,7 +420,7 @@ def call_local_support_assistant(prompt: str) -> str:
         )
 
     return (
-        "Hello! I am Owen, your support assistant. I can help with technical issues involving hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, UKG, Workday, "
+        "Hello! I am Owen, your support assistant. I can help with technical issues involving hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, "
         "inventory control, quality control, industrial automation, HaiPick robotics (HAI Robotics ACR systems), SPC, SQC, and more. "
         "Just describe what's going on in your own words — no technical jargon needed — and I'll point you in the right direction. "
         "If we need to dig deeper, just submit a ticket and our team will come to you!"
@@ -442,8 +442,8 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "and USB devices); the Blue Yonder/JDA warehouse management system (WMS); "
     "the Client Server Warehousing (CSW) WMS; SAP; SmartSheet; SharePoint; Excel; Microsoft Power Platform "
     "(Power BI, Power Apps, Power Automate, and Power Pages); Opendock Nova dock scheduling; "
-    "UKG (timecard management, scheduling, time-off requests, and punch corrections); "
-    "Workday HRIS (payroll, benefits, direct deposit, W-2s, employee profiles, onboarding/offboarding, and org changes); "
+    "UKG WFM (timecard management, scheduling, time-off requests, and punch corrections); "
+    "Workday HCM (payroll, benefits, direct deposit, W-2s, employee profiles, onboarding/offboarding, and org changes); "
     "continuous improvement; "
     "warehouse-centric inventory control; quality control; industrial automation (PLCs, SCADA, conveyors, sortation); "
     "robotics — specifically the HAI Robotics HaiPick suite of Autonomous Case-handling Robots (ACRs), including the A3, A3S, and A3EL models "
@@ -596,7 +596,7 @@ st.markdown(
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
     code = st.selectbox("Code", TICKET_CODES)
-    priority = st.selectbox("Priority", ["High", "Medium", "Low"])
+    priority = st.selectbox("Priority", ["Urgent", "High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
         "Attachments (optional)",
@@ -727,7 +727,7 @@ edited_df = st.data_editor(
         "Priority": st.column_config.SelectboxColumn(
             "Priority",
             help="Priority",
-            options=["High", "Medium", "Low"],
+            options=["Urgent", "High", "Medium", "Low"],
             required=True,
         ),
         "Assigned To": st.column_config.TextColumn(
