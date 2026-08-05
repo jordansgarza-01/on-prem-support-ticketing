@@ -70,7 +70,7 @@ from ticket_repository import SupabaseTicketRepository, validate_supabase_url
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
 
 st.set_page_config(
-    page_title="ISP",
+    page_title="DC05 ISP",
     page_icon="💻",
 )
 
@@ -80,8 +80,8 @@ if components_html is not None:
         <script>
         const parentDocument = window.parent.document;
         const setPageTitle = () => {
-            if (parentDocument.title !== 'ISP') {
-                parentDocument.title = 'ISP';
+            if (parentDocument.title !== 'DC05 ISP') {
+                parentDocument.title = 'DC05 ISP';
             }
         };
         setPageTitle();
