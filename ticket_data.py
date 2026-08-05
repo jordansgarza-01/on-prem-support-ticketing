@@ -10,6 +10,7 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
+TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial")
 
 
 def _get_resolution_status_column(df: pd.DataFrame) -> str | None:
@@ -121,7 +122,7 @@ def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Resolution Status"],
+        columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Resolution Status"],
     )
 
 
@@ -132,6 +133,11 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     ticket_ids = df["ID"].fillna("").astype(str)
     cleaned = df[~ticket_ids.str.startswith(FAKE_TICKET_ID_PREFIXES, na=False)].copy()
+    if "Code" not in cleaned.columns:
+        cleaned["Code"] = "IT"
+    else:
+        codes = cleaned["Code"].astype("string").str.strip()
+        cleaned["Code"] = codes.where(codes.isin(TICKET_CODES), "IT")
     if "Date Closed" in cleaned.columns:
         date_closed = cleaned["Date Closed"].astype("string")
         cleaned["Date Closed"] = date_closed.mask(
@@ -156,3 +162,13 @@ def filter_tickets_by_id(df: pd.DataFrame, ticket_id_query: str) -> pd.DataFrame
     return df[
         df["ID"].astype(str).str.contains(ticket_id_query, case=False, na=False)
     ].reset_index(drop=True)
+
+
+def filter_tickets_by_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
+    """Return tickets for the selected code, or all tickets when no code is selected."""
+    if df.empty or not code or code == "All" or "Code" not in df.columns:
+        return df.copy()
+
+    return df[df["Code"].astype(str).str.casefold() == code.casefold()].reset_index(
+        drop=True
+    )

@@ -10,6 +10,7 @@ from ticket_data import (
     calculate_resolution_rate,
     create_initial_ticket_dataframe,
     delete_ticket_by_id,
+    filter_tickets_by_code,
     filter_tickets_by_id,
     sanitize_ticket_dataframe,
 )
@@ -22,6 +23,7 @@ def test_create_initial_ticket_dataframe_starts_empty():
     assert list(df.columns) == [
         "ID",
         "Issue",
+        "Code",
         "Priority",
         "Date Submitted",
         "Date Closed",
@@ -75,6 +77,16 @@ def test_sanitize_ticket_dataframe_replaces_empty_close_date_placeholder():
     assert cleaned.iloc[0]["Date Closed"] == ""
 
 
+def test_sanitize_ticket_dataframe_adds_default_code_to_legacy_tickets():
+    df = pd.DataFrame(
+        [{"ID": "TICKET-1009", "Issue": "real", "Resolution Status": "Pending"}]
+    )
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned.iloc[0]["Code"] == "IT"
+
+
 def test_delete_ticket_by_id_removes_the_requested_row():
     df = pd.DataFrame(
         [
@@ -125,6 +137,20 @@ def test_filter_tickets_by_id_matches_ticket_numbers_case_insensitively():
 
     assert len(filtered) == 1
     assert filtered.iloc[0]["ID"] == "TICKET-1010"
+
+
+def test_filter_tickets_by_code_returns_matching_tickets():
+    df = pd.DataFrame(
+        [
+            {"ID": "TICKET-1009", "Code": "IT"},
+            {"ID": "TICKET-1010", "Code": "Maintenance"},
+            {"ID": "TICKET-1011", "Code": "IT"},
+        ]
+    )
+
+    filtered = filter_tickets_by_code(df, "it")
+
+    assert filtered["ID"].tolist() == ["TICKET-1009", "TICKET-1011"]
 
 
 def test_calculate_average_open_tickets_per_week_uses_ticket_history():

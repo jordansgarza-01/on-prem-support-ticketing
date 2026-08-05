@@ -28,9 +28,11 @@ try:
         calculate_resolution_rate,
         create_initial_ticket_dataframe,
         delete_ticket_by_id,
+        filter_tickets_by_code,
         filter_tickets_by_id,
         get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
+        TICKET_CODES,
     )
 except ImportError:
     ticket_data_spec = importlib.util.spec_from_file_location(
@@ -57,8 +59,10 @@ except ImportError:
     calculate_resolution_rate = ticket_data_module.calculate_resolution_rate
     create_initial_ticket_dataframe = ticket_data_module.create_initial_ticket_dataframe
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
+    filter_tickets_by_code = ticket_data_module.filter_tickets_by_code
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
+    TICKET_CODES = ticket_data_module.TICKET_CODES
 
 # Show app title and description.
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
@@ -594,6 +598,7 @@ st.markdown(
 # in a form, the app will only rerun once the submit button is pressed.
 with st.form("add_ticket_form"):
     issue = st.text_area("Describe the issue")
+    code = st.selectbox("Code", TICKET_CODES)
     priority = st.selectbox("Priority", ["High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
@@ -615,6 +620,7 @@ if submitted:
             {
                 "ID": new_ticket_id,
                 "Issue": issue.strip() if issue else "No description provided.",
+                "Code": code,
                 "Priority": priority,
                 "Date Submitted": submitted_at,
                 "Date Closed": "",
@@ -643,8 +649,15 @@ st.markdown(
 )
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
 
-search_term = st.text_input("Search tickets by ticket number", placeholder="e.g. TICKET-1010")
+filter_col, search_col = st.columns([1, 2])
+with filter_col:
+    selected_code = st.selectbox("Filter by Code", options=["All", *TICKET_CODES])
+with search_col:
+    search_term = st.text_input(
+        "Search tickets by ticket number", placeholder="e.g. TICKET-1010"
+    )
 filtered_df = filter_tickets_by_id(st.session_state.df, search_term)
+filtered_df = filter_tickets_by_code(filtered_df, selected_code)
 
 # Allow the user to delete a ticket by selecting its ID.
 selected_ticket_id = st.selectbox(
@@ -708,6 +721,12 @@ edited_df = st.data_editor(
             help="Ticket description",
             width="large",
         ),
+        "Code": st.column_config.SelectboxColumn(
+            "Code",
+            help="Support work category",
+            options=TICKET_CODES,
+            required=True,
+        ),
         "Priority": st.column_config.SelectboxColumn(
             "Priority",
             help="Priority",
@@ -741,7 +760,10 @@ needs_close_stamp = (
 if needs_close_stamp.any():
     edited_df.loc[needs_close_stamp, "Date Closed"] = get_eastern_us_timestamp()
 
-st.session_state.df = edited_df
+unedited_df = st.session_state.df[
+    ~st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
+]
+st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
 
 # Ticket detail: show attachments for a selected ticket.
 st.markdown(
@@ -784,56 +806,59 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Show metrics side by side using `st.columns` and `st.metric`.
-col1, col2, col3, col4 = st.columns(4)
-open_ticket_count = calculate_open_ticket_count(st.session_state.df)
-high_priority_open_ticket_count = calculate_high_priority_open_ticket_count(
-    st.session_state.df
-)
-resolution_rate = calculate_resolution_rate(st.session_state.df)
-average_resolution_time_hours = calculate_average_resolution_time_hours(
-    st.session_state.df
-)
+CODE_KPI_LABELS = {
+    "IT": (
+        "Open IT incidents",
+        "Urgent IT incidents",
+        "IT resolution rate",
+        "Average IT resolution time (hours)",
+    ),
+    "CI": (
+        "Open improvement requests",
+        "Urgent improvement requests",
+        "Improvement completion rate",
+        "Average improvement cycle time (hours)",
+    ),
+    "Maintenance": (
+        "Open maintenance work orders",
+        "Urgent maintenance work orders",
+        "Work order completion rate",
+        "Average repair time (hours)",
+    ),
+    "Custodial": (
+        "Open custodial requests",
+        "Urgent custodial requests",
+        "Custodial completion rate",
+        "Average request completion time (hours)",
+    ),
+}
 
-with col1:
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Open ticket backlog</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(open_ticket_count) + "</div>",
-        unsafe_allow_html=True,
-    )
+for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
+    left_code_col, right_code_col = st.columns(2)
+    for code_name, code_column in zip(code_pair, (left_code_col, right_code_col)):
+        code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
+        open_ticket_count = calculate_open_ticket_count(code_tickets)
+        high_priority_open_ticket_count = calculate_high_priority_open_ticket_count(
+            code_tickets
+        )
+        resolution_rate = calculate_resolution_rate(code_tickets)
+        average_resolution_time_hours = calculate_average_resolution_time_hours(
+            code_tickets
+        )
+        open_label, urgent_label, rate_label, time_label = CODE_KPI_LABELS[code_name]
 
-with col2:
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>High-priority open tickets</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(high_priority_open_ticket_count) + "</div>",
-        unsafe_allow_html=True,
-    )
-
-with col3:
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Ticket resolution rate</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(resolution_rate) + "%</div>",
-        unsafe_allow_html=True,
-    )
-
-with col4:
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; font-weight: 700; color: #000000; line-height: 1.4; margin-bottom: 0.35rem; min-height: 2.8rem; display: flex; align-items: flex-start;'>Average resolution time (hours)</div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.15rem; font-weight: 700; color: #000000; text-align: left; min-height: 1.6rem;'>" + format_stat_value(average_resolution_time_hours) + "</div>",
-        unsafe_allow_html=True,
-    )
+        with code_column:
+            st.markdown(
+                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
+                unsafe_allow_html=True,
+            )
+            metric_left, metric_right = st.columns(2)
+            with metric_left:
+                st.metric(open_label, format_stat_value(open_ticket_count))
+                st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
+            with metric_right:
+                st.metric(urgent_label, format_stat_value(high_priority_open_ticket_count))
+                st.metric(time_label, format_stat_value(average_resolution_time_hours))
 
 # Show two Altair charts using `st.altair_chart`.
 st.write("")
