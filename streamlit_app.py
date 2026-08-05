@@ -76,7 +76,21 @@ st.set_page_config(
 
 if components_html is not None:
     components_html(
-        "<script>window.parent.document.title = 'ISP';</script>",
+        """
+        <script>
+        const parentDocument = window.parent.document;
+        const setPageTitle = () => {
+            if (parentDocument.title !== 'ISP') {
+                parentDocument.title = 'ISP';
+            }
+        };
+        setPageTitle();
+        new MutationObserver(setPageTitle).observe(parentDocument.querySelector('title'), {
+            childList: true,
+            subtree: true,
+        });
+        </script>
+        """,
         height=0,
         width=0,
     )
