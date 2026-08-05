@@ -29,6 +29,7 @@ def test_create_initial_ticket_dataframe_starts_empty():
         "Date Closed",
         "Submitted By",
         "Assigned To",
+        "Notes",
         "Resolution Status",
     ]
     assert df.empty
@@ -85,6 +86,16 @@ def test_sanitize_ticket_dataframe_adds_default_code_to_legacy_tickets():
     cleaned = sanitize_ticket_dataframe(df)
 
     assert cleaned.iloc[0]["Code"] == "IT"
+
+
+def test_sanitize_ticket_dataframe_adds_notes_to_legacy_tickets():
+    df = pd.DataFrame(
+        [{"ID": "TICKET-1009", "Issue": "real", "Resolution Status": "Pending"}]
+    )
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned.iloc[0]["Notes"] == ""
 
 
 def test_delete_ticket_by_id_removes_the_requested_row():

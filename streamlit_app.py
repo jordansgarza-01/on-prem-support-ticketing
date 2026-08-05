@@ -637,6 +637,7 @@ if submitted:
                 "Date Closed": "",
                 "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
                 "Assigned To": "",
+                "Notes": "",
                 "Resolution Status": "Pending",
             }
         ]
@@ -755,6 +756,11 @@ edited_df = st.data_editor(
         "Assigned To": st.column_config.TextColumn(
             "Assigned To",
             help="Person assigned to this ticket",
+        ),
+        "Notes": st.column_config.TextColumn(
+            "Notes",
+            help="Internal notes for this ticket",
+            width="large",
         ),
         "Resolution Status": st.column_config.SelectboxColumn(
             "Resolution Status",

@@ -122,7 +122,7 @@ def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Resolution Status"],
+        columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Notes", "Resolution Status"],
     )
 
 
@@ -138,6 +138,8 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     else:
         codes = cleaned["Code"].astype("string").str.strip()
         cleaned["Code"] = codes.where(codes.isin(TICKET_CODES), "IT")
+    if "Notes" not in cleaned.columns:
+        cleaned["Notes"] = ""
     if "Date Closed" in cleaned.columns:
         date_closed = cleaned["Date Closed"].astype("string")
         cleaned["Date Closed"] = date_closed.mask(
