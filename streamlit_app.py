@@ -460,14 +460,14 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
 
 
 def _get_github_models_token() -> str | None:
-    for env_key in ("GITHUB_TOKEN", "GH_TOKEN", "OPENAI_API_KEY"):
+    for env_key in ("GITHUB_MODELS_TOKEN",):
         token = os.environ.get(env_key)
         if token and str(token).strip():
             return str(token).strip()
 
     secrets = getattr(st, "secrets", None)
     if secrets is not None:
-        for secret_key in ("GITHUB_TOKEN", "GH_TOKEN", "OPENAI_API_KEY"):
+        for secret_key in ("GITHUB_MODELS_TOKEN",):
             try:
                 token = secrets.get(secret_key)
             except Exception:

@@ -310,6 +310,14 @@ def test_call_local_support_assistant_returns_printer_guidance():
     assert "ricoh im 460f" in reply.lower()
 
 
+def test_get_github_models_token_uses_dedicated_environment_variable(monkeypatch):
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "models-token")
+    monkeypatch.setenv("GITHUB_TOKEN", "general-token")
+    monkeypatch.setenv("GH_TOKEN", "general-token")
+
+    assert streamlit_app._get_github_models_token() == "models-token"
+
+
 def test_clear_assistant_messages_resets_conversation_history():
     session_state = {
         "assistant_messages": [
@@ -328,16 +336,22 @@ def test_format_stat_value_rounds_to_two_decimals():
     assert streamlit_app.format_stat_value(3.456) == "3.46"
 
 
-def test_get_github_models_token_uses_gh_token_when_github_token_missing(monkeypatch):
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+def test_get_github_models_token_ignores_generic_github_tokens(monkeypatch):
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
+    monkeypatch.setattr(streamlit_app.st, "secrets", {}, raising=False)
+    monkeypatch.setenv("GITHUB_TOKEN", "github-token")
     monkeypatch.setenv("GH_TOKEN", "gh-token")
 
-    assert streamlit_app._get_github_models_token() == "gh-token"
+    assert streamlit_app._get_github_models_token() is None
 
 
 def test_get_github_models_token_uses_streamlit_secrets(monkeypatch):
-    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
-    monkeypatch.delenv("GH_TOKEN", raising=False)
-    monkeypatch.setattr(streamlit_app.st, "secrets", {"GITHUB_TOKEN": "secret-from-secrets"}, raising=False)
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
+    monkeypatch.setattr(
+        streamlit_app.st,
+        "secrets",
+        {"GITHUB_MODELS_TOKEN": "secret-from-secrets"},
+        raising=False,
+    )
 
     assert streamlit_app._get_github_models_token() == "secret-from-secrets"
