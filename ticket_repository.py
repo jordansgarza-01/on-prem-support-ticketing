@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlparse
 
 import pandas as pd
 
@@ -24,6 +25,26 @@ DATABASE_TO_DISPLAY_COLUMNS = {
     database_name: display_name
     for display_name, database_name in DISPLAY_TO_DATABASE_COLUMNS.items()
 }
+
+
+def validate_supabase_url(value: str) -> str:
+    """Return a valid Supabase Project URL without a trailing slash."""
+    url = str(value).strip().rstrip("/")
+    parsed = urlparse(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or not parsed.hostname.endswith(".supabase.co")
+        or parsed.path
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            "SUPABASE_URL must be the HTTPS Project URL in the form "
+            "https://<project-ref>.supabase.co."
+        )
+    return url
 
 
 def ticket_records_to_dataframe(records: list[Mapping[str, Any]]) -> pd.DataFrame:

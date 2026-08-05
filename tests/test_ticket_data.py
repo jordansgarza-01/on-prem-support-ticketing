@@ -1,7 +1,11 @@
 import pandas as pd
 
 import streamlit_app
-from ticket_repository import SupabaseTicketRepository, ticket_records_to_dataframe
+from ticket_repository import (
+    SupabaseTicketRepository,
+    ticket_records_to_dataframe,
+    validate_supabase_url,
+)
 from ticket_data import (
     calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
@@ -118,6 +122,24 @@ def test_ticket_dataframe_persists_across_sessions(tmp_path):
     loaded = load_ticket_dataframe(storage_path)
 
     assert loaded.to_dict("records") == submitted.to_dict("records")
+
+
+def test_validate_supabase_url_accepts_only_project_urls():
+    assert validate_supabase_url("https://project-ref.supabase.co/") == (
+        "https://project-ref.supabase.co"
+    )
+
+    for invalid_url in (
+        "project-ref.supabase.co",
+        "https://supabase.com/dashboard/project/project-ref",
+        "postgresql://postgres@db.project-ref.supabase.co:5432/postgres",
+        "https://project-ref.supabase.co/rest/v1",
+    ):
+        try:
+            validate_supabase_url(invalid_url)
+        except ValueError:
+            continue
+        raise AssertionError(f"Expected {invalid_url} to be rejected")
 
 
 def test_supabase_ticket_repository_uses_row_level_ticket_operations():

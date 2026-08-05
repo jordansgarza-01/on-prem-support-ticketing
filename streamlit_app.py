@@ -64,7 +64,7 @@ except ImportError:
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
-from ticket_repository import SupabaseTicketRepository
+from ticket_repository import SupabaseTicketRepository, validate_supabase_url
 
 # Show app title and description.
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
@@ -141,7 +141,7 @@ def get_ticket_repository() -> SupabaseTicketRepository:
 
         return SupabaseTicketRepository(
             create_client(
-                st.secrets["SUPABASE_URL"],
+                validate_supabase_url(st.secrets["SUPABASE_URL"]),
                 st.secrets["SUPABASE_SERVICE_ROLE_KEY"],
             )
         )
@@ -163,7 +163,14 @@ if (
         st.session_state.df = get_ticket_repository().load_tickets()
     except Exception as exc:
         st.session_state.df = create_initial_ticket_dataframe()
-        st.error(f"Unable to load tickets from Supabase: {exc}")
+        if "Name or service not known" in str(exc):
+            st.error(
+                "Supabase could not be reached. In Streamlit Secrets, replace "
+                "SUPABASE_URL with the exact HTTPS Project URL copied from "
+                "Supabase Project Settings > API."
+            )
+        else:
+            st.error(f"Unable to load tickets from Supabase: {exc}")
         st.stop()
     st.session_state.ticket_data_version = TICKET_DATA_VERSION
 
