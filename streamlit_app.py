@@ -319,7 +319,13 @@ def call_local_support_assistant(prompt: str) -> str:
             "Submit a ticket with those details and we'll get it sorted!"
         )
 
-    if any(term in lowered_prompt for term in ["inventory", "cycle count", "sap", "stock", "on-hand", "on hand", "putaway", "pick", "replenishment"]):
+    if (
+        not any(term in lowered_prompt for term in [
+            "haipick", "hai pick", "hai robotics", "hai system", "hai systems",
+            "hai rcs", "haipick rcs", "hai a3", "hai a3s", "hai a3el",
+        ])
+        and any(term in lowered_prompt for term in ["inventory", "cycle count", "sap", "stock", "on-hand", "on hand", "putaway", "pick", "replenishment"])
+    ):
         return (
             "Inventory control question? Happy to help! Whether it's a cycle count that's off, a stock discrepancy, or a SAP transaction that isn't behaving, "
             "the first step is usually double-checking the location and quantity you're seeing versus what the system expects. "

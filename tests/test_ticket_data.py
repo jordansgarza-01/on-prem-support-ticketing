@@ -487,6 +487,16 @@ def test_call_local_support_assistant_returns_specific_haipick_guidance():
     assert "fault code" in reply.lower()
 
 
+def test_call_local_support_assistant_routes_haipick_task_to_hai_guidance():
+    reply = streamlit_app.call_local_support_assistant(
+        "HaiPick task queue is not sending a pick task to an A3"
+    )
+
+    assert "hai robotics haipick" in reply.lower()
+    assert "rcs console" in reply.lower()
+    assert "inventory control question" not in reply.lower()
+
+
 def test_call_local_support_assistant_does_not_assume_generic_robot_is_haipick():
     reply = streamlit_app.call_local_support_assistant("An AMR has stopped working")
 
