@@ -310,6 +310,19 @@ def test_call_local_support_assistant_returns_printer_guidance():
     assert "ricoh im 460f" in reply.lower()
 
 
+def test_get_assistant_reply_does_not_call_github_models(monkeypatch):
+    def fail_if_called(prompt):
+        raise AssertionError("GitHub Models should not be called")
+
+    monkeypatch.setattr(
+        streamlit_app, "call_github_models_support_assistant", fail_if_called
+    )
+
+    reply = streamlit_app.get_assistant_reply("printer is offline")
+
+    assert "printer" in reply.lower()
+
+
 def test_get_github_models_token_uses_dedicated_environment_variable(monkeypatch):
     monkeypatch.setenv("GITHUB_MODELS_TOKEN", "models-token")
     monkeypatch.setenv("GITHUB_TOKEN", "general-token")
