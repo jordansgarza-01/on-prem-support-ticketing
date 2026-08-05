@@ -777,8 +777,9 @@ if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
     st.dataframe(
         styled_view,
         use_container_width=True,
+        height=540,
         hide_index=True,
-        row_height=72,
+        row_height=108,
         column_config={
             "Issue": st.column_config.TextColumn("Issue", width="large"),
         },
