@@ -97,7 +97,7 @@ APP_PASSWORD = "Platinum2025"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
-        "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000;'>O&M P&HS | Internal Support Portal</h1></div>",
+        "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000;'>DC05 | Internal Support Portal</h1></div>",
         unsafe_allow_html=True,
     )
     entered_password = st.text_input("Password", type="password")
@@ -111,7 +111,7 @@ if not st.session_state.get("authenticated", False):
     st.stop()
 
 st.markdown(
-    "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000; white-space: nowrap; overflow-x: auto;'>O&M P&HS | Internal Support Portal</h1></div>",
+    "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000; white-space: nowrap; overflow-x: auto;'>DC05 | Internal Support Portal</h1></div>",
     unsafe_allow_html=True,
 )
 
