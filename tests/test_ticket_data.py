@@ -105,6 +105,16 @@ def test_sanitize_ticket_dataframe_adds_notes_to_legacy_tickets():
     assert cleaned.iloc[0]["Notes"] == ""
 
 
+def test_sanitize_ticket_dataframe_adds_missing_ui_columns_to_legacy_tickets():
+    df = pd.DataFrame([{"ID": "TICKET-1009"}])
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned.iloc[0]["Issue"] == ""
+    assert cleaned.iloc[0]["Resolution Status"] == "Pending"
+    assert cleaned.iloc[0]["Priority"] == "Medium"
+
+
 def test_ticket_dataframe_persists_across_sessions(tmp_path):
     storage_path = tmp_path / "tickets.json"
     submitted = pd.DataFrame(

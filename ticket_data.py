@@ -153,18 +153,28 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     ticket_ids = df["ID"].fillna("").astype(str)
     cleaned = df[~ticket_ids.str.startswith(FAKE_TICKET_ID_PREFIXES, na=False)].copy()
+    defaults = {
+        "Issue": "",
+        "Priority": "Medium",
+        "Date Submitted": "",
+        "Date Closed": "",
+        "Submitted By": "Unknown",
+        "Assigned To": "",
+        "Notes": "",
+        "Resolution Status": "Pending",
+    }
+    for column, default_value in defaults.items():
+        if column not in cleaned.columns:
+            cleaned[column] = default_value
     if "Code" not in cleaned.columns:
         cleaned["Code"] = "IT"
     else:
         codes = cleaned["Code"].astype("string").str.strip()
         cleaned["Code"] = codes.where(codes.isin(TICKET_CODES), "IT")
-    if "Notes" not in cleaned.columns:
-        cleaned["Notes"] = ""
-    if "Date Closed" in cleaned.columns:
-        date_closed = cleaned["Date Closed"].astype("string")
-        cleaned["Date Closed"] = date_closed.mask(
-            date_closed.str.strip().str.lower() == "empty", ""
-        )
+    date_closed = cleaned["Date Closed"].astype("string")
+    cleaned["Date Closed"] = date_closed.mask(
+        date_closed.str.strip().str.lower() == "empty", ""
+    )
     return cleaned.reset_index(drop=True)
 
 
