@@ -3,6 +3,7 @@ import datetime
 import importlib.util
 import os
 import sys
+import uuid
 from pathlib import Path
 
 import pandas as pd
@@ -30,9 +31,7 @@ try:
         filter_tickets_by_code,
         filter_tickets_by_id,
         get_eastern_us_timestamp,
-        load_ticket_dataframe,
         sanitize_ticket_dataframe,
-        save_ticket_dataframe,
         TICKET_CODES,
     )
 except ImportError:
@@ -62,10 +61,10 @@ except ImportError:
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
     filter_tickets_by_code = ticket_data_module.filter_tickets_by_code
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
-    load_ticket_dataframe = ticket_data_module.load_ticket_dataframe
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
-    save_ticket_dataframe = ticket_data_module.save_ticket_dataframe
     TICKET_CODES = ticket_data_module.TICKET_CODES
+
+from ticket_repository import SupabaseTicketRepository
 
 # Show app title and description.
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
@@ -134,17 +133,38 @@ Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model
     """
 )
 
-# Create the starter dataframe and reset it when the app data version changes.
-TICKET_DATA_VERSION = 4
-TICKET_STORAGE_PATH = Path(
-    os.environ.get("TICKET_STORAGE_PATH", str(APP_ROOT / ".ticket-data.json"))
-)
+@st.cache_resource(show_spinner=False)
+def get_ticket_repository() -> SupabaseTicketRepository:
+    """Create the server-side Supabase repository from Streamlit secrets."""
+    try:
+        from supabase import create_client
+
+        return SupabaseTicketRepository(
+            create_client(
+                st.secrets["SUPABASE_URL"],
+                st.secrets["SUPABASE_SERVICE_ROLE_KEY"],
+            )
+        )
+    except KeyError as exc:
+        raise RuntimeError(
+            "Supabase is not configured. Add SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY to Streamlit secrets."
+        ) from exc
+
+
+# Create the shared ticket dataframe and refresh it for each browser session.
+TICKET_DATA_VERSION = 5
 if (
     "df" not in st.session_state
     or "ticket_data_version" not in st.session_state
     or st.session_state.ticket_data_version != TICKET_DATA_VERSION
 ):
-    st.session_state.df = load_ticket_dataframe(TICKET_STORAGE_PATH)
+    try:
+        st.session_state.df = get_ticket_repository().load_tickets()
+    except Exception as exc:
+        st.session_state.df = create_initial_ticket_dataframe()
+        st.error(f"Unable to load tickets from Supabase: {exc}")
+        st.stop()
     st.session_state.ticket_data_version = TICKET_DATA_VERSION
 
 st.session_state.df = sanitize_ticket_dataframe(st.session_state.df)
@@ -628,11 +648,8 @@ with st.form("add_ticket_form"):
 
 if submitted:
     # Create a single ticket row from the form inputs and append it to the session dataframe.
-    recent_ticket_number = (
-        int(max(st.session_state.df.ID).split("-")[1]) if not st.session_state.df.empty else 999
-    )
     submitted_at = get_eastern_us_timestamp()
-    new_ticket_id = f"TICKET-{recent_ticket_number + 1}"
+    new_ticket_id = f"TICKET-{uuid.uuid4().hex[:8].upper()}"
     df_new = pd.DataFrame(
         [
             {
@@ -659,8 +676,12 @@ if submitted:
     # Show a little success message.
     st.write("Ticket submitted successfully. Here are the pertinent details:")
     st.dataframe(df_new, width="stretch", hide_index=True)
+    try:
+        get_ticket_repository().create_ticket(df_new.iloc[0].to_dict())
+    except Exception as exc:
+        st.error(f"Unable to save {new_ticket_id} to Supabase: {exc}")
+        st.stop()
     st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
-    save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
 
 # Show section to view and edit existing tickets in a table.
 st.markdown(
@@ -688,8 +709,12 @@ selected_ticket_id = st.selectbox(
 )
 
 if st.button("Delete selected ticket") and selected_ticket_id:
+    try:
+        get_ticket_repository().delete_ticket(selected_ticket_id)
+    except Exception as exc:
+        st.error(f"Unable to delete {selected_ticket_id} from Supabase: {exc}")
+        st.stop()
     st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
-    save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
     st.session_state.ticket_attachments.pop(selected_ticket_id, None)
     st.session_state.ticket_comments = [
         c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
@@ -797,8 +822,18 @@ if needs_close_stamp.any():
 unedited_df = st.session_state.df[
     ~st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
 ]
+previously_edited_df = st.session_state.df[
+    st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
+].set_index("ID")
+for _, ticket in edited_df.iterrows():
+    previous_ticket = previously_edited_df.loc[ticket["ID"]]
+    if not ticket.equals(previous_ticket):
+        try:
+            get_ticket_repository().update_ticket(ticket.to_dict())
+        except Exception as exc:
+            st.error(f"Unable to update {ticket['ID']} in Supabase: {exc}")
+            st.stop()
 st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
-save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
 
 # Ticket detail: show attachments for a selected ticket.
 st.markdown(

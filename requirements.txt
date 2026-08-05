@@ -3,3 +3,4 @@ openai
 openpyxl
 pillow
 pillow-heif
+supabase

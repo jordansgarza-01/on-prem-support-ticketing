@@ -1,6 +1,7 @@
 import pandas as pd
 
 import streamlit_app
+from ticket_repository import SupabaseTicketRepository, ticket_records_to_dataframe
 from ticket_data import (
     calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
@@ -117,6 +118,80 @@ def test_ticket_dataframe_persists_across_sessions(tmp_path):
     loaded = load_ticket_dataframe(storage_path)
 
     assert loaded.to_dict("records") == submitted.to_dict("records")
+
+
+def test_supabase_ticket_repository_uses_row_level_ticket_operations():
+    class FakeResponse:
+        data = [
+            {
+                "id": "TICKET-1009",
+                "issue": "Printer is offline",
+                "code": "IT",
+                "priority": "High",
+                "date_submitted": "2026-08-05 10:00:00 ET",
+                "date_closed": "",
+                "submitted_by": "Jordan",
+                "assigned_to": "",
+                "notes": "Checked battery",
+                "resolution_status": "Pending",
+            }
+        ]
+
+    class FakeQuery:
+        def __init__(self, calls):
+            self.calls = calls
+
+        def select(self, value):
+            self.calls.append(("select", value))
+            return self
+
+        def order(self, column, desc):
+            self.calls.append(("order", column, desc))
+            return self
+
+        def insert(self, record):
+            self.calls.append(("insert", record))
+            return self
+
+        def update(self, record):
+            self.calls.append(("update", record))
+            return self
+
+        def delete(self):
+            self.calls.append(("delete",))
+            return self
+
+        def eq(self, column, value):
+            self.calls.append(("eq", column, value))
+            return self
+
+        def execute(self):
+            self.calls.append(("execute",))
+            return FakeResponse()
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def table(self, name):
+            self.calls.append(("table", name))
+            return FakeQuery(self.calls)
+
+    client = FakeClient()
+    repository = SupabaseTicketRepository(client)
+
+    dataframe = repository.load_tickets()
+    ticket = dataframe.iloc[0].to_dict()
+    repository.create_ticket(ticket)
+    repository.update_ticket(ticket)
+    repository.delete_ticket("TICKET-1009")
+
+    assert dataframe.iloc[0]["ID"] == "TICKET-1009"
+    assert dataframe.iloc[0]["Resolution Status"] == "Pending"
+    assert ("insert", {"id": "TICKET-1009", "issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
+    assert ("update", {"issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
+    assert ("delete",) in client.calls
+    assert ("eq", "id", "TICKET-1009") in client.calls
 
 
 def test_delete_ticket_by_id_removes_the_requested_row():
