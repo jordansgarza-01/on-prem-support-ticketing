@@ -10,7 +10,7 @@ from ticket_data import (
     calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
     calculate_average_open_tickets_per_week,
-    calculate_high_priority_open_ticket_count,
+    calculate_urgent_open_ticket_count,
     calculate_open_ticket_count,
     calculate_resolution_rate,
     create_initial_ticket_dataframe,
@@ -381,7 +381,7 @@ def test_helpdesk_kpis_calculate_from_ticket_data():
             },
             {
                 "ID": "TICKET-1019",
-                "Priority": "Low",
+                "Priority": "Urgent",
                 "Date Submitted": "2026-08-04 09:00:00",
                 "Date Closed": "",
                 "Resolution Status": "In Process",
@@ -397,7 +397,7 @@ def test_helpdesk_kpis_calculate_from_ticket_data():
     )
 
     assert calculate_open_ticket_count(df) == 2
-    assert calculate_high_priority_open_ticket_count(df) == 1
+    assert calculate_urgent_open_ticket_count(df) == 1
     assert calculate_resolution_rate(df) == 33.33
     assert calculate_average_resolution_time_hours(df) == 4.5
 

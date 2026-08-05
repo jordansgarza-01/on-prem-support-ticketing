@@ -23,7 +23,7 @@ try:
         calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
         calculate_average_open_tickets_per_week,
-        calculate_high_priority_open_ticket_count,
+        calculate_urgent_open_ticket_count,
         calculate_open_ticket_count,
         calculate_resolution_rate,
         create_initial_ticket_dataframe,
@@ -52,8 +52,8 @@ except ImportError:
     calculate_average_open_tickets_per_week = (
         ticket_data_module.calculate_average_open_tickets_per_week
     )
-    calculate_high_priority_open_ticket_count = (
-        ticket_data_module.calculate_high_priority_open_ticket_count
+    calculate_urgent_open_ticket_count = (
+        ticket_data_module.calculate_urgent_open_ticket_count
     )
     calculate_open_ticket_count = ticket_data_module.calculate_open_ticket_count
     calculate_resolution_rate = ticket_data_module.calculate_resolution_rate
@@ -935,7 +935,7 @@ for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
     for code_name, code_column in zip(code_pair, (left_code_col, right_code_col)):
         code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
         open_ticket_count = calculate_open_ticket_count(code_tickets)
-        high_priority_open_ticket_count = calculate_high_priority_open_ticket_count(
+        urgent_open_ticket_count = calculate_urgent_open_ticket_count(
             code_tickets
         )
         resolution_rate = calculate_resolution_rate(code_tickets)
@@ -954,7 +954,7 @@ for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
                 st.metric(open_label, format_stat_value(open_ticket_count))
                 st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
             with metric_right:
-                st.metric(urgent_label, format_stat_value(high_priority_open_ticket_count))
+                st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
                 st.metric(time_label, format_stat_value(average_resolution_time_hours))
 
 # Comments section for ticket Q&A.

@@ -80,15 +80,15 @@ def calculate_open_ticket_count(df: pd.DataFrame) -> int:
     return int((df[status_column].astype(str).str.lower() != "resolved").sum())
 
 
-def calculate_high_priority_open_ticket_count(df: pd.DataFrame) -> int:
-    """Return the number of unresolved high-priority tickets."""
+def calculate_urgent_open_ticket_count(df: pd.DataFrame) -> int:
+    """Return the number of unresolved tickets with Urgent priority."""
     status_column = _get_resolution_status_column(df)
     if df.empty or status_column is None or "Priority" not in df.columns:
         return 0
 
     is_open = df[status_column].astype(str).str.lower() != "resolved"
-    is_high_priority = df["Priority"].astype(str).str.lower() == "high"
-    return int((is_open & is_high_priority).sum())
+    is_urgent = df["Priority"].astype(str).str.lower() == "urgent"
+    return int((is_open & is_urgent).sum())
 
 
 def calculate_resolution_rate(df: pd.DataFrame) -> float:
