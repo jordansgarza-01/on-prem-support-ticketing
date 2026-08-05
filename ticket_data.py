@@ -1,4 +1,5 @@
 import datetime as dt
+from pathlib import Path
 
 import pandas as pd
 
@@ -124,6 +125,25 @@ def create_initial_ticket_dataframe() -> pd.DataFrame:
     return pd.DataFrame(
         columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Notes", "Resolution Status"],
     )
+
+
+def load_ticket_dataframe(storage_path: Path) -> pd.DataFrame:
+    """Load tickets from persistent storage, returning an empty dataset when absent."""
+    if not storage_path.exists():
+        return create_initial_ticket_dataframe()
+
+    try:
+        return pd.read_json(storage_path, orient="records", convert_dates=False)
+    except (OSError, ValueError):
+        return create_initial_ticket_dataframe()
+
+
+def save_ticket_dataframe(df: pd.DataFrame, storage_path: Path) -> None:
+    """Atomically persist the current ticket dataframe for future sessions."""
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path = storage_path.with_suffix(".tmp")
+    df.to_json(temporary_path, orient="records", indent=2)
+    temporary_path.replace(storage_path)
 
 
 def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:

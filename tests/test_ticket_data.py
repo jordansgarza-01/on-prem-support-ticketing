@@ -12,7 +12,9 @@ from ticket_data import (
     delete_ticket_by_id,
     filter_tickets_by_code,
     filter_tickets_by_id,
+    load_ticket_dataframe,
     sanitize_ticket_dataframe,
+    save_ticket_dataframe,
 )
 
 
@@ -96,6 +98,25 @@ def test_sanitize_ticket_dataframe_adds_notes_to_legacy_tickets():
     cleaned = sanitize_ticket_dataframe(df)
 
     assert cleaned.iloc[0]["Notes"] == ""
+
+
+def test_ticket_dataframe_persists_across_sessions(tmp_path):
+    storage_path = tmp_path / "tickets.json"
+    submitted = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1009",
+                "Issue": "Printer is offline",
+                "Notes": "Checked battery",
+                "Resolution Status": "Pending",
+            }
+        ]
+    )
+
+    save_ticket_dataframe(submitted, storage_path)
+    loaded = load_ticket_dataframe(storage_path)
+
+    assert loaded.to_dict("records") == submitted.to_dict("records")
 
 
 def test_delete_ticket_by_id_removes_the_requested_row():

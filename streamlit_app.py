@@ -5,7 +5,6 @@ import os
 import sys
 from pathlib import Path
 
-import altair as alt
 import pandas as pd
 import streamlit as st
 
@@ -31,7 +30,9 @@ try:
         filter_tickets_by_code,
         filter_tickets_by_id,
         get_eastern_us_timestamp,
+        load_ticket_dataframe,
         sanitize_ticket_dataframe,
+        save_ticket_dataframe,
         TICKET_CODES,
     )
 except ImportError:
@@ -61,7 +62,9 @@ except ImportError:
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
     filter_tickets_by_code = ticket_data_module.filter_tickets_by_code
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
+    load_ticket_dataframe = ticket_data_module.load_ticket_dataframe
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
+    save_ticket_dataframe = ticket_data_module.save_ticket_dataframe
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
 # Show app title and description.
@@ -92,6 +95,7 @@ st.markdown(
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
     [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; }}
+    [data-testid="stMetricLabel"] {{ white-space: normal !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -132,12 +136,15 @@ Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model
 
 # Create the starter dataframe and reset it when the app data version changes.
 TICKET_DATA_VERSION = 4
+TICKET_STORAGE_PATH = Path(
+    os.environ.get("TICKET_STORAGE_PATH", str(APP_ROOT / ".ticket-data.json"))
+)
 if (
     "df" not in st.session_state
     or "ticket_data_version" not in st.session_state
     or st.session_state.ticket_data_version != TICKET_DATA_VERSION
 ):
-    st.session_state.df = create_initial_ticket_dataframe()
+    st.session_state.df = load_ticket_dataframe(TICKET_STORAGE_PATH)
     st.session_state.ticket_data_version = TICKET_DATA_VERSION
 
 st.session_state.df = sanitize_ticket_dataframe(st.session_state.df)
@@ -653,6 +660,7 @@ if submitted:
     st.write("Ticket submitted successfully. Here are the pertinent details:")
     st.dataframe(df_new, width="stretch", hide_index=True)
     st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
+    save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
 
 # Show section to view and edit existing tickets in a table.
 st.markdown(
@@ -681,6 +689,7 @@ selected_ticket_id = st.selectbox(
 
 if st.button("Delete selected ticket") and selected_ticket_id:
     st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
+    save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
     st.session_state.ticket_attachments.pop(selected_ticket_id, None)
     st.session_state.ticket_comments = [
         c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
@@ -789,6 +798,7 @@ unedited_df = st.session_state.df[
     ~st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
 ]
 st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
+save_ticket_dataframe(st.session_state.df, TICKET_STORAGE_PATH)
 
 # Ticket detail: show attachments for a selected ticket.
 st.markdown(
@@ -884,46 +894,6 @@ for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
             with metric_right:
                 st.metric(urgent_label, format_stat_value(high_priority_open_ticket_count))
                 st.metric(time_label, format_stat_value(average_resolution_time_hours))
-
-# Show two Altair charts using `st.altair_chart`.
-st.write("")
-left_col, right_col = st.columns(2)
-
-with left_col:
-    st.markdown(
-        "<div style='margin: 1rem 0 0.35rem 0;'><h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0;'>Current ticket priorities</h3></div>",
-        unsafe_allow_html=True,
-    )
-    priority_plot = (
-        alt.Chart(edited_df)
-        .mark_arc()
-        .encode(theta="count():Q", color=alt.Color("Priority:N", scale=alt.Scale(range=BRAND_COLORS)))
-        .properties(height=300)
-        .configure_legend(
-            orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
-        )
-    )
-    st.altair_chart(priority_plot, width="stretch", theme="streamlit")
-
-with right_col:
-    st.markdown(
-        "<div style='margin: 1rem 0 0.35rem 0;'><h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0;'>Resolution status per week</h3></div>",
-        unsafe_allow_html=True,
-    )
-    status_plot = (
-        alt.Chart(edited_df)
-        .mark_bar()
-        .encode(
-            x="week(Date Submitted):O",
-            y="count():Q",
-            xOffset="Resolution Status:N",
-            color=alt.Color("Resolution Status:N", scale=alt.Scale(range=BRAND_COLORS)),
-        )
-        .configure_legend(
-            orient="bottom", titleFontSize=14, labelFontSize=14, titlePadding=5
-        )
-    )
-    st.altair_chart(status_plot, width="stretch", theme="streamlit")
 
 # Comments section for ticket Q&A.
 st.markdown(
