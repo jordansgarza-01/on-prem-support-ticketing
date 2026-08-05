@@ -810,7 +810,7 @@ if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
     st.dataframe(
         styled_view,
         use_container_width=True,
-        height=540,
+        height=600,
         hide_index=True,
         row_height=108,
         column_config={
