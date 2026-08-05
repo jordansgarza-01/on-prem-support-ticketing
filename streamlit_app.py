@@ -772,8 +772,12 @@ st.markdown(
     "<div style='margin: 1rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: #333;'>Edit tickets</span></div>",
     unsafe_allow_html=True,
 )
+editor_df = filtered_df.copy()
+if "Date Closed" in editor_df.columns:
+    editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
+
 edited_df = st.data_editor(
-    filtered_df,
+    editor_df,
     width="stretch",
     hide_index=True,
     column_config={
@@ -817,6 +821,8 @@ edited_df = st.data_editor(
     # Disable editing the ID, Date Submitted, and Date Closed columns.
     disabled=["ID", "Date Submitted", "Date Closed"],
 )
+if "Date Closed" in edited_df.columns:
+    edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
 
 # Auto-stamp Date Closed the moment a ticket is set to Closed.
 needs_close_stamp = (
