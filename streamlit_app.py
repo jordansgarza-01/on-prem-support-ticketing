@@ -227,7 +227,10 @@ def call_local_support_assistant(prompt: str) -> str:
     prompt_text = (prompt or "support request").strip()
     lowered_prompt = prompt_text.lower()
 
-    if any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "honeywell", "rp4d", "mobile printer", "copier", "copy", "scan", "fax", "mfp", "multi-function"]):
+    if (
+        not any(term in lowered_prompt for term in ["ct47", "ct 47", "handheld", "rfid"])
+        and any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "rp4d", "mobile printer", "copier", "copy", "scan", "fax", "mfp", "multi-function"])
+    ):
         zebra_tip = (
             "For a Zebra ZT620 label printer: check that the label roll is loaded correctly and the media type/size in the printer settings matches the labels you're using. "
             "If labels are printing blank or misaligned, run calibration from the printer front panel (hold Feed + Cancel on power-up). "
@@ -248,6 +251,13 @@ def call_local_support_assistant(prompt: str) -> str:
             "Sounds like a printer issue. I can help you troubleshoot a Zebra ZT620 label printer, Honeywell RP4D mobile printer, or Ricoh IM 460F multi-function printer. "
             + zebra_tip + " " + rp4d_tip + " " + ricoh_tip +
             " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
+        )
+
+    if any(term in lowered_prompt for term in ["ethernet", "wired network", "network cable", "lan cable", "rj45"]):
+        return (
+            "For a wired network problem, start with the physical connection: make sure the Ethernet cable clicks firmly into the device and wall jack or dock, then check for link lights at the port. "
+            "Try another known-good cable or port if one is available, and restart the device or dock after reconnecting it. "
+            "If the connection still fails, submit a ticket with the jack location, device name, and whether the link lights are on so we can trace the network path."
         )
 
     if any(term in lowered_prompt for term in ["wifi", "wi-fi", "wireless", "network", "connect", "internet"]):
@@ -395,6 +405,17 @@ def call_local_support_assistant(prompt: str) -> str:
             "Note the fault code or what you're seeing, then submit a ticket so a technician can take a closer look!"
         )
 
+    if any(term in lowered_prompt for term in [
+        "facility", "facilities", "maintenance", "hvac", "heating", "air conditioning",
+        "lighting", "light fixture", "plumbing", "leak", "water", "restroom", "door",
+        "industrial hygiene", "air quality", "ventilation", "chemical", "spill", "ergonomic",
+    ]):
+        return (
+            "For a facilities, maintenance, or industrial hygiene concern, safety comes first. Don't try to repair electrical equipment, machinery, leaks, or ventilation systems yourself. "
+            "For an immediate hazard, spill, strong odor, blocked exit, or unsafe condition, follow your site's emergency or safety-reporting process right away. "
+            "For routine issues, submit a ticket with the exact location, what you observed, when it started, and photos if they can be taken safely. We'll route it to the right facilities or maintenance team."
+        )
+
     if any(term in lowered_prompt for term in ["robot", "robotics", "cobot", "agv", "amr", "haipick", "hai pick", "hai robotics", "acr", "a3", "a3s", "a3el"]):
         return (
             "Robotics question — sounds like it could be a HaiPick system! "
@@ -511,9 +532,12 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "robotics — specifically the HAI Robotics HaiPick suite of Autonomous Case-handling Robots (ACRs), including the A3, A3S, and A3EL models "
     "(covering RCS console alarms, fault codes, e-stop and safety-stop recovery, charging station issues, travel-path obstructions, bin-retrieval errors, and WMS/RCS integration); "
     "statistical process control (SPC); and statistical quality control (SQC). "
-    "Answer with the depth and accuracy of a subject-matter expert on each of these topics, but always translate that "
-    "expertise into casual, plain, layman's terms for a non-technical audience — avoid jargon, and explain any "
-    "technical term you do use. Keep replies short and conversational. Do not mention ticket counts or system context. "
+    "facilities management, maintenance, and industrial hygiene (including HVAC, lighting, plumbing, access points, ventilation, air-quality, spill, and safe escalation guidance). "
+    "For every request, act as a helpdesk troubleshooter: identify the likely scope, give a short ordered set of safe checks that the user can perform, explain the purpose of each check in plain language, "
+    "ask for the specific model, error, location, or affected record when that would isolate the issue, and state exactly what useful details to include in a ticket if escalation is needed. "
+    "Answer with the depth and accuracy of a subject-matter expert on each topic, but always translate that expertise into casual, plain, layman's terms for a non-technical audience. "
+    "Avoid jargon, and briefly explain any technical term you do use. Never invent system access, policy, status, or a repair outcome. For safety, electrical, machinery, robotics, chemical, or industrial-hygiene risks, "
+    "tell the user to stop and follow the site's safety or emergency process rather than attempting a risky repair. Keep replies focused and conversational. Do not mention ticket counts or system context. "
     "You also have general knowledge of Platinum Equity, LLC (a private equity firm) and Owens & Minor Products & "
     "Healthcare Services (Owens & Minor, or simply O&M), the healthcare products and services company this support "
     "system belongs to, in case users ask general questions about either company. "

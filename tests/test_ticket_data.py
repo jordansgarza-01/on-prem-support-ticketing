@@ -458,6 +458,27 @@ def test_call_local_support_assistant_returns_rp4d_guidance():
     assert "re-pair" in reply.lower()
 
 
+def test_call_local_support_assistant_routes_ct47_to_handheld_guidance():
+    reply = streamlit_app.call_local_support_assistant("My Honeywell CT47 cannot scan")
+
+    assert "ct47" in reply.lower()
+    assert "scan window" in reply.lower()
+
+
+def test_call_local_support_assistant_returns_wired_network_guidance():
+    reply = streamlit_app.call_local_support_assistant("Ethernet connection is down")
+
+    assert "ethernet cable" in reply.lower()
+    assert "link lights" in reply.lower()
+
+
+def test_call_local_support_assistant_returns_facilities_safety_guidance():
+    reply = streamlit_app.call_local_support_assistant("There is a water leak by the dock door")
+
+    assert "safety" in reply.lower()
+    assert "location" in reply.lower()
+
+
 def test_get_assistant_reply_uses_github_models_when_available(monkeypatch):
     monkeypatch.setattr(
         streamlit_app,
