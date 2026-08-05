@@ -479,6 +479,21 @@ def test_call_local_support_assistant_returns_facilities_safety_guidance():
     assert "location" in reply.lower()
 
 
+def test_call_local_support_assistant_returns_specific_haipick_guidance():
+    reply = streamlit_app.call_local_support_assistant("HAI RCS has an alarm on an A3")
+
+    assert "hai robotics haipick" in reply.lower()
+    assert "rcs console" in reply.lower()
+    assert "fault code" in reply.lower()
+
+
+def test_call_local_support_assistant_does_not_assume_generic_robot_is_haipick():
+    reply = streamlit_app.call_local_support_assistant("An AMR has stopped working")
+
+    assert "rcs console" not in reply.lower()
+    assert "charging station" not in reply.lower()
+
+
 def test_get_assistant_reply_uses_github_models_when_available(monkeypatch):
     monkeypatch.setattr(
         streamlit_app,

@@ -416,15 +416,17 @@ def call_local_support_assistant(prompt: str) -> str:
             "For routine issues, submit a ticket with the exact location, what you observed, when it started, and photos if they can be taken safely. We'll route it to the right facilities or maintenance team."
         )
 
-    if any(term in lowered_prompt for term in ["robot", "robotics", "cobot", "agv", "amr", "haipick", "hai pick", "hai robotics", "acr", "a3", "a3s", "a3el"]):
+    if any(term in lowered_prompt for term in [
+        "haipick", "hai pick", "hai robotics", "hai system", "hai systems",
+        "hai rcs", "haipick rcs", "hai a3", "hai a3s", "hai a3el",
+    ]):
         return (
-            "Robotics question — sounds like it could be a HaiPick system! "
-            "If a HaiPick ACR (like an A3, A3S, or A3EL unit) has stopped mid-task, first check whether a safety stop or e-stop was triggered — the robot's status light will flash amber or red if so. "
-            "Clear any obstructions from the travel path and check the HAI Robotics management console (RCS) for an active alarm or fault code before attempting a manual reset. "
-            "If the RCS shows a charging fault, verify the charging station contacts are clean and the robot is correctly docked. "
-            "For bin-retrieval errors or WMS integration issues (e.g., tasks queuing but not executing), check the RCS task queue and confirm the WMS interface is still connected. "
-            "Never manually move a stopped unit without first confirming in the RCS that it is safe to do so. "
-            "Note the robot ID, fault code, and what it was doing when it stopped, then submit a ticket and we'll get a technician on it!"
+            "For a HAI Robotics HaiPick system issue, first keep people clear of the affected aisle and do not bypass a guard, safety stop, or e-stop. "
+            "In the HAI RCS console, identify the specific ACR, workstation, or charging station and record its active alarm, fault code, and current task. "
+            "For a stopped ACR, look only for visible travel-path obstructions and confirm the RCS shows it is safe before any authorized recovery. "
+            "For charging faults, check whether the unit is correctly docked and whether the charging contacts are visibly dirty or blocked; do not service electrical parts yourself. "
+            "For bin-retrieval or task-queue problems, record the tote/bin ID, source and destination, time the task stopped, and whether other HaiPick units are still working. "
+            "Submit a ticket with those details and screenshots of the RCS alarm so the HAI support team can isolate whether the issue is the ACR, station, RCS, or WMS interface."
         )
 
     if any(term in lowered_prompt for term in ["excel", "spreadsheet", "formula", "pivot", "vlookup", "macro"]):
@@ -531,8 +533,9 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "warehouse-centric inventory control; quality control; industrial automation (PLCs, SCADA, conveyors, sortation); "
     "robotics — specifically the HAI Robotics HaiPick suite of Autonomous Case-handling Robots (ACRs), including the A3, A3S, and A3EL models "
     "(covering RCS console alarms, fault codes, e-stop and safety-stop recovery, charging station issues, travel-path obstructions, bin-retrieval errors, and WMS/RCS integration); "
-    "statistical process control (SPC); and statistical quality control (SQC). "
+    "statistical process control (SPC); and statistical quality control (SQC); "
     "facilities management, maintenance, and industrial hygiene (including HVAC, lighting, plumbing, access points, ventilation, air-quality, spill, and safe escalation guidance). "
+    "Only give HaiPick-specific guidance when the user identifies HAI Robotics, HaiPick, an HAI RCS console, or a HaiPick A3/A3S/A3EL system; do not assume an unrelated robot, AMR, AGV, cobot, or automation issue uses HaiPick. "
     "For every request, act as a helpdesk troubleshooter: identify the likely scope, give a short ordered set of safe checks that the user can perform, explain the purpose of each check in plain language, "
     "ask for the specific model, error, location, or affected record when that would isolate the issue, and state exactly what useful details to include in a ticket if escalation is needed. "
     "Answer with the depth and accuracy of a subject-matter expert on each topic, but always translate that expertise into casual, plain, layman's terms for a non-technical audience. "
