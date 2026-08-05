@@ -573,6 +573,9 @@ def call_github_models_support_assistant(prompt: str) -> str | None:
 
 
 def get_assistant_reply(prompt: str) -> str:
+    github_models_reply = call_github_models_support_assistant(prompt)
+    if github_models_reply is not None:
+        return github_models_reply
     return call_local_support_assistant(prompt)
 
 

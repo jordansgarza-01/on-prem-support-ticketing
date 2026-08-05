@@ -458,12 +458,21 @@ def test_call_local_support_assistant_returns_rp4d_guidance():
     assert "re-pair" in reply.lower()
 
 
-def test_get_assistant_reply_does_not_call_github_models(monkeypatch):
-    def fail_if_called(prompt):
-        raise AssertionError("GitHub Models should not be called")
-
+def test_get_assistant_reply_uses_github_models_when_available(monkeypatch):
     monkeypatch.setattr(
-        streamlit_app, "call_github_models_support_assistant", fail_if_called
+        streamlit_app,
+        "call_github_models_support_assistant",
+        lambda prompt: "Model response",
+    )
+
+    reply = streamlit_app.get_assistant_reply("printer is offline")
+
+    assert reply == "Model response"
+
+
+def test_get_assistant_reply_falls_back_to_local_assistant(monkeypatch):
+    monkeypatch.setattr(
+        streamlit_app, "call_github_models_support_assistant", lambda prompt: None
     )
 
     reply = streamlit_app.get_assistant_reply("printer is offline")
