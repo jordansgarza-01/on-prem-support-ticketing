@@ -109,7 +109,7 @@ st.markdown(
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
     [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; }}
     [data-testid="stMetric"], [data-testid="stMetric"] > div {{ min-width: 0 !important; }}
-    [data-testid="stMetricLabel"] {{ display: block !important; max-width: 100% !important; white-space: normal !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
+    [data-testid="stMetricLabel"] {{ display: block !important; max-width: 100% !important; white-space: pre-line !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -943,28 +943,28 @@ st.markdown(
 
 CODE_KPI_LABELS = {
     "IT": (
-        "Open IT incidents",
-        "Urgent IT incidents",
-        "IT resolution rate",
-        "Average IT resolution time (hours)",
+        "Open IT\nincidents",
+        "Urgent IT\nincidents",
+        "IT resolution\nrate",
+        "Average IT resolution\ntime (hours)",
     ),
     "CI": (
-        "Open improvement requests",
-        "Urgent improvement requests",
-        "Improvement completion rate",
-        "Average improvement cycle time (hours)",
+        "Open improvement\nrequests",
+        "Urgent improvement\nrequests",
+        "Improvement completion\nrate",
+        "Average improvement cycle\ntime (hours)",
     ),
     "Maintenance": (
-        "Open maintenance work orders",
-        "Urgent maintenance work orders",
-        "Work order completion rate",
-        "Average repair time (hours)",
+        "Open maintenance\nwork orders",
+        "Urgent maintenance\nwork orders",
+        "Work order completion\nrate",
+        "Average repair time\n(hours)",
     ),
     "Custodial": (
-        "Open custodial requests",
-        "Urgent custodial requests",
-        "Custodial completion rate",
-        "Average request completion time (hours)",
+        "Open custodial\nrequests",
+        "Urgent custodial\nrequests",
+        "Custodial completion\nrate",
+        "Average request completion\ntime (hours)",
     ),
 }
 
