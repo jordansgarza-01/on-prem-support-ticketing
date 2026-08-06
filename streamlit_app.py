@@ -968,29 +968,24 @@ CODE_KPI_LABELS = {
     ),
 }
 
-for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
-    left_code_col, right_code_col = st.columns(2)
-    for code_name, code_column in zip(code_pair, (left_code_col, right_code_col)):
-        code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
-        open_ticket_count = calculate_open_ticket_count(code_tickets)
-        urgent_open_ticket_count = calculate_urgent_open_ticket_count(
-            code_tickets
-        )
-        resolution_rate = calculate_resolution_rate(code_tickets)
-        average_resolution_time_hours = calculate_average_resolution_time_hours(
-            code_tickets
-        )
-        open_label, urgent_label, rate_label, time_label = CODE_KPI_LABELS[code_name]
+for code_name in TICKET_CODES:
+    code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
+    open_ticket_count = calculate_open_ticket_count(code_tickets)
+    urgent_open_ticket_count = calculate_urgent_open_ticket_count(code_tickets)
+    resolution_rate = calculate_resolution_rate(code_tickets)
+    average_resolution_time_hours = calculate_average_resolution_time_hours(
+        code_tickets
+    )
+    open_label, urgent_label, rate_label, time_label = CODE_KPI_LABELS[code_name]
 
-        with code_column:
-            st.markdown(
-                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
-                unsafe_allow_html=True,
-            )
-            st.metric(open_label, format_stat_value(open_ticket_count))
-            st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
-            st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
-            st.metric(time_label, format_stat_value(average_resolution_time_hours))
+    st.markdown(
+        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
+        unsafe_allow_html=True,
+    )
+    st.metric(open_label, format_stat_value(open_ticket_count))
+    st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
+    st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
+    st.metric(time_label, format_stat_value(average_resolution_time_hours))
 
 # Comments section for ticket Q&A.
 st.markdown(
