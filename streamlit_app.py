@@ -987,13 +987,10 @@ for code_pair in (("IT", "CI"), ("Maintenance", "Custodial")):
                 f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
                 unsafe_allow_html=True,
             )
-            metric_left, metric_right = st.columns(2)
-            with metric_left:
-                st.metric(open_label, format_stat_value(open_ticket_count))
-                st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
-            with metric_right:
-                st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
-                st.metric(time_label, format_stat_value(average_resolution_time_hours))
+            st.metric(open_label, format_stat_value(open_ticket_count))
+            st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
+            st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
+            st.metric(time_label, format_stat_value(average_resolution_time_hours))
 
 # Comments section for ticket Q&A.
 st.markdown(
