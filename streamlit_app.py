@@ -108,7 +108,8 @@ st.markdown(
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
     [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; }}
-    [data-testid="stMetricLabel"] {{ white-space: normal !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
+    [data-testid="stMetric"], [data-testid="stMetric"] > div {{ min-width: 0 !important; }}
+    [data-testid="stMetricLabel"] {{ display: block !important; max-width: 100% !important; white-space: normal !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
     </style>
     """,
     unsafe_allow_html=True,
