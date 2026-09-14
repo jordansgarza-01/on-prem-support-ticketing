@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
 
 try:
     from streamlit.components.v1 import html as components_html
@@ -81,9 +82,12 @@ from ticket_repository import SupabaseTicketRepository, validate_supabase_url
 # Show app title and description.
 BRAND_COLORS = ["#111111", "#D9D9D9", "#7A1F2D"]
 
+FAVICON_PATH = APP_ROOT / "O&M (3).png"
+FAVICON = Image.open(FAVICON_PATH) if FAVICON_PATH.exists() else "💻"
+
 st.set_page_config(
     page_title="DC05 ISP",
-    page_icon="💻",
+    page_icon=FAVICON,
 )
 
 if components_html is not None:
@@ -635,7 +639,7 @@ if "assistant_messages" not in st.session_state:
 
 assistant_container = st.container()
 with assistant_container:
-    logo_path = APP_ROOT / "IT.png"
+    logo_path = APP_ROOT / "IT-01.png"
     avatar_size = 220
     if logo_path.exists():
         image_b64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
@@ -654,9 +658,9 @@ with assistant_container:
         "<div style='flex: 1; border: 1px solid #D9D9D9; border-radius: 14px; padding: 1rem; box-sizing: border-box; "
         "background: linear-gradient(135deg, #ffffff 0%, #f7f7f7 100%); box-shadow: 0 2px 8px rgba(0,0,0,0.05); "
         "display: flex; flex-direction: column; justify-content: center;'>"
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1rem; font-weight: 700; color: #111111; margin-bottom: 0.35rem;'>Ask Owen — Your On-Prem Technical Support Agent</div>"
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1rem; font-weight: 700; color: #111111; margin-bottom: 0.35rem;'>Hello, and welcome. I am your on-prem technical support agent</div>"
         "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #333333; line-height: 1.45;'>"
-        "After hours? Not a problem! Owen is always available locally to assist with an array of Tier-1 technical support issues. Just ask."
+        "After hours? Not a problem! I am always available locally to assist with an array of Tier-1 technical support issues. Just ask."
         "</div></div>"
         "</div>",
         unsafe_allow_html=True,
@@ -705,7 +709,7 @@ st.markdown(
 # We're adding tickets via an `st.form` and some input widgets. If widgets are used
 # in a form, the app will only rerun once the submit button is pressed.
 with st.form("add_ticket_form"):
-    issue = st.text_area("Describe the issue")
+    issue = st.text_area("Description")
     code = st.selectbox("Code", TICKET_CODES)
     priority = st.selectbox("Priority", ["Urgent", "High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
@@ -855,7 +859,7 @@ if not display_df.empty and "Resolution Status" in display_df.columns:
         hide_index=True,
         row_height=108,
         column_config={
-            "Issue": st.column_config.TextColumn("Issue", width="large"),
+            "Issue": st.column_config.TextColumn("Description", width="large"),
             "Due Date": st.column_config.TextColumn("Due Date"),
             _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
                 _PAST_DUE_FLAG_COLUMN,
@@ -879,7 +883,7 @@ edited_df = st.data_editor(
     hide_index=True,
     column_config={
         "Issue": st.column_config.TextColumn(
-            "Issue",
+            "Description",
             help="Ticket description",
             width="large",
         ),
