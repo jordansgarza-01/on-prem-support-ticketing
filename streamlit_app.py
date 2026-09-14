@@ -688,7 +688,7 @@ with assistant_container:
             st.markdown(message["content"])
 
     SUPPORT_TOPICS = [
-        "JDA", "CSW", "SAP", "SmartSheet", "SharePoint", "Excel", "Power Platform",
+        "JDA", "CSW", "SAP", "ETQ", "SmartSheet", "OneDrive", "SharePoint", "Excel", "Power Platform",
         "Opendock Nova", "UKG WFM", "Workday HCM", "Honeywell CT47 RF devices",
         "Honeywell RP4D printers", "Zebra ZT620 label printers", "Ricoh IM 460F MFPs",
         "HAI Robotics (HaiPick)", "Wireless internet", "Ethernet", "Bluetooth",
