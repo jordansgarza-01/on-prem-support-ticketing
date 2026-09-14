@@ -159,7 +159,7 @@ st.markdown(
 
 st.write(
     """
-    Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
+    Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, ETQ, SmartSheet, SharePoint,
 Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model RF devices, Honeywell RP4D mobile printers, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
@@ -692,9 +692,6 @@ with assistant_container:
         "Opendock Nova", "UKG WFM", "Workday HCM", "Honeywell CT47 RF devices",
         "Honeywell RP4D printers", "Zebra ZT620 label printers", "Ricoh IM 460F MFPs",
         "HAI Robotics (HaiPick)", "Wireless internet", "Ethernet", "Bluetooth",
-        "End user credentials", "Continuous improvement", "Inventory control",
-        "Quality control", "Industrial automation", "Facilities management",
-        "Maintenance", "Industrial hygiene",
     ]
     topic_cards_html = "".join(
         f"<div style='background-color: {DEEP_BURGUNDY}; color: #ffffff; font-family: Helvetica, Arial, sans-serif; "
