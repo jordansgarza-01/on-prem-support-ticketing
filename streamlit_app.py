@@ -139,11 +139,11 @@ APP_PASSWORD = "Platinum2025"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
-        "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000;'>DC05 | Internal Support Portal</h1></div>",
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY};'>P&HS | Internal Support Portal</h1></div>",
         unsafe_allow_html=True,
     )
     entered_password = st.text_input("Password", type="password")
-    login_clicked = st.button("Log In", type="primary")
+    login_clicked = st.button("Log in", type="primary")
     if login_clicked:
         if entered_password == APP_PASSWORD:
             st.session_state.authenticated = True
@@ -153,7 +153,7 @@ if not st.session_state.get("authenticated", False):
     st.stop()
 
 st.markdown(
-    "<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: #000000; white-space: nowrap; overflow-x: auto;'>DC05 | Internal Support Portal</h1></div>",
+    f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
     unsafe_allow_html=True,
 )
 
@@ -702,7 +702,7 @@ with assistant_container:
 
 # Show a section to add a new ticket.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Submit a ticket</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Submit a ticket</h2></div>",
     unsafe_allow_html=True,
 )
 
@@ -714,11 +714,11 @@ with st.form("add_ticket_form"):
     priority = st.selectbox("Priority", ["Urgent", "High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
-        "Attachments (optional)",
+        "Upload Attachment",
         type=["heic", "heif", "jpeg", "jpg", "png"],
         accept_multiple_files=True,
     )
-    submitted = st.form_submit_button("Submit", type="primary")
+    submitted = st.form_submit_button("Submit ticket", type="primary")
 
 if submitted:
     # Create a single ticket row from the form inputs and append it to the session dataframe.
@@ -760,7 +760,7 @@ if submitted:
 
 # Show section to view and edit existing tickets in a table.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Existing tickets</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Existing tickets</h2></div>",
     unsafe_allow_html=True,
 )
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
@@ -773,7 +773,7 @@ open_tickets_df = (
     else st.session_state.df
 )
 st.download_button(
-    "Print Open Tickets",
+    "Print open tickets",
     data=build_open_tickets_pdf(open_tickets_df),
     file_name="open_tickets.pdf",
     mime="application/pdf",
@@ -798,7 +798,7 @@ selected_ticket_id = st.selectbox(
     key="delete_ticket_selectbox",
 )
 
-if st.button("Delete Selected Ticket", type="primary") and selected_ticket_id:
+if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
     try:
         get_ticket_repository().delete_ticket(selected_ticket_id)
     except Exception as exc:
@@ -955,7 +955,7 @@ st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
 
 # Ticket detail: show attachments for a selected ticket.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Ticket attachments</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Ticket attachments</h2></div>",
     unsafe_allow_html=True,
 )
 ticket_ids_with_attachments = [
@@ -991,7 +991,7 @@ if detail_ticket_id:
 
 # Show some metrics and charts about the ticket.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Statistics</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics</h2></div>",
     unsafe_allow_html=True,
 )
 
@@ -1050,7 +1050,7 @@ for code_name in TICKET_CODES:
     ) = CODE_KPI_LABELS[code_name]
 
     st.markdown(
-        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
+        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
         unsafe_allow_html=True,
     )
     st.metric(open_label, format_stat_value(open_ticket_count))
@@ -1062,7 +1062,7 @@ for code_name in TICKET_CODES:
 
 # Comments section for ticket Q&A.
 st.markdown(
-    "<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: #000000; margin: 0;'>Comments</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Comments</h2></div>",
     unsafe_allow_html=True,
 )
 st.write("Post questions or updates related to a ticket's status or details.")
@@ -1082,7 +1082,7 @@ comment_ticket_id = st.selectbox(
 comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
 comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
 
-if st.button("Post Comment", type="primary"):
+if st.button("Post comment", type="primary"):
     if not comment_ticket_id:
         st.warning("Please select a ticket.")
     elif not comment_username.strip():
