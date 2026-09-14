@@ -120,10 +120,133 @@ def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
     return round(float(valid_resolution_hours.mean()), 2) if not valid_resolution_hours.empty else 0.0
 
 
+def calculate_due_date(submitted_at: str, days: int = 7) -> str:
+    """Return a due-date timestamp `days` after the given submission timestamp."""
+    cleaned_submitted_at = str(submitted_at).strip()
+    parsed = pd.to_datetime(
+        cleaned_submitted_at.replace(" ET", ""), format="mixed", errors="coerce"
+    )
+    if pd.isna(parsed):
+        parsed = dt.datetime.now()
+    due = parsed + dt.timedelta(days=days)
+    return due.strftime("%Y-%m-%d %H:%M:%S ET")
+
+
+def calculate_stale_open_ticket_flags(df: pd.DataFrame, days: int = 7) -> pd.Series:
+    """Return a boolean Series flagging unresolved tickets open for `days` or more."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or status_column is None:
+        return pd.Series(False, index=df.index, dtype=bool)
+
+    submitted_dates = _parse_date_column(df, "Date Submitted")
+    days_open = (pd.Timestamp.now() - submitted_dates).dt.total_seconds() / 86400
+    is_open = df[status_column].astype(str).str.lower() != "resolved"
+    return is_open & (days_open >= days)
+
+
+def calculate_overdue_ticket_count(df: pd.DataFrame) -> int:
+    """Return the count of unresolved tickets whose Due Date has already passed."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or status_column is None or "Due Date" not in df.columns:
+        return 0
+
+    due_dates = _parse_date_column(df, "Due Date")
+    is_open = df[status_column].astype(str).str.lower() != "resolved"
+    is_past_due = due_dates.notna() & (due_dates < pd.Timestamp.now())
+    return int((is_open & is_past_due).sum())
+
+
+def calculate_on_time_close_rate(df: pd.DataFrame) -> float:
+    """Return the percentage of resolved tickets closed on or before their Due Date."""
+    status_column = _get_resolution_status_column(df)
+    if (
+        df.empty
+        or status_column is None
+        or "Due Date" not in df.columns
+        or "Date Closed" not in df.columns
+    ):
+        return 0.0
+
+    is_resolved = df[status_column].astype(str).str.lower() == "resolved"
+    due_dates = _parse_date_column(df, "Due Date")
+    closed_dates = _parse_date_column(df, "Date Closed")
+    eligible = is_resolved & due_dates.notna() & closed_dates.notna()
+    if not eligible.any():
+        return 0.0
+
+    on_time = eligible & (closed_dates <= due_dates)
+    return round(float(on_time.sum() / eligible.sum() * 100), 2)
+
+
+def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
+    """Render open (non-resolved) tickets into a printable PDF table and return its bytes."""
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import landscape, letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+
+    styles = getSampleStyleSheet()
+    elements: list = [Paragraph("Open Tickets", styles["Title"])]
+
+    columns = [
+        "ID",
+        "Issue",
+        "Code",
+        "Priority",
+        "Date Submitted",
+        "Due Date",
+        "Assigned To",
+        "Resolution Status",
+    ]
+    available_columns = [column for column in columns if column in df.columns]
+
+    if df.empty or not available_columns:
+        elements.append(Paragraph("No open tickets.", styles["Normal"]))
+    else:
+        table_rows = [available_columns]
+        for _, ticket in df[available_columns].iterrows():
+            table_rows.append(
+                [
+                    Paragraph(str(ticket[column]), styles["BodyText"])
+                    if column == "Issue"
+                    else str(ticket[column])
+                    for column in available_columns
+                ]
+            )
+
+        table = Table(table_rows, repeatRows=1)
+        table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7A1F2D")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#F7F7F7")],
+                    ),
+                ]
+            )
+        )
+        elements.append(table)
+
+    buffer = BytesIO()
+    document = SimpleDocTemplate(buffer, pagesize=landscape(letter), title="Open Tickets")
+    document.build(elements)
+    return buffer.getvalue()
+
+
 def create_initial_ticket_dataframe() -> pd.DataFrame:
     """Create an empty starter dataset with no preloaded tickets."""
     return pd.DataFrame(
-        columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Date Closed", "Submitted By", "Assigned To", "Notes", "Resolution Status"],
+        columns=["ID", "Issue", "Code", "Priority", "Date Submitted", "Due Date", "Date Closed", "Submitted By", "Assigned To", "Notes", "Resolution Status"],
     )
 
 
@@ -157,6 +280,7 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         "Issue": "",
         "Priority": "Medium",
         "Date Submitted": "",
+        "Due Date": "",
         "Date Closed": "",
         "Submitted By": "Unknown",
         "Assigned To": "",
@@ -175,6 +299,11 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     cleaned["Date Closed"] = date_closed.mask(
         date_closed.str.strip().str.lower() == "empty", ""
     )
+    due_date_missing = cleaned["Due Date"].astype("string").fillna("").str.strip() == ""
+    if due_date_missing.any():
+        cleaned.loc[due_date_missing, "Due Date"] = cleaned.loc[
+            due_date_missing, "Date Submitted"
+        ].apply(lambda submitted: calculate_due_date(submitted) if str(submitted).strip() else "")
     return cleaned.reset_index(drop=True)
 
 

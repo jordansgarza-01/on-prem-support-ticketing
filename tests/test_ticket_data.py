@@ -33,6 +33,7 @@ def test_create_initial_ticket_dataframe_starts_empty():
         "Code",
         "Priority",
         "Date Submitted",
+        "Due Date",
         "Date Closed",
         "Submitted By",
         "Assigned To",
@@ -161,6 +162,7 @@ def test_supabase_ticket_repository_uses_row_level_ticket_operations():
                 "code": "IT",
                 "priority": "High",
                 "date_submitted": "2026-08-05 10:00:00 ET",
+                "due_date": "2026-08-12 10:00:00 ET",
                 "date_closed": "",
                 "submitted_by": "Jordan",
                 "assigned_to": "",
@@ -220,8 +222,8 @@ def test_supabase_ticket_repository_uses_row_level_ticket_operations():
 
     assert dataframe.iloc[0]["ID"] == "TICKET-1009"
     assert dataframe.iloc[0]["Resolution Status"] == "Pending"
-    assert ("insert", {"id": "TICKET-1009", "issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
-    assert ("update", {"issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
+    assert ("insert", {"id": "TICKET-1009", "issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "due_date": "2026-08-12 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
+    assert ("update", {"issue": "Printer is offline", "code": "IT", "priority": "High", "date_submitted": "2026-08-05 10:00:00 ET", "due_date": "2026-08-12 10:00:00 ET", "date_closed": "", "submitted_by": "Jordan", "assigned_to": "", "notes": "Checked battery", "resolution_status": "Pending"}) in client.calls
     assert ("delete",) in client.calls
     assert ("eq", "id", "TICKET-1009") in client.calls
 

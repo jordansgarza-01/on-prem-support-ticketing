@@ -15,6 +15,7 @@ DISPLAY_TO_DATABASE_COLUMNS = {
     "Code": "code",
     "Priority": "priority",
     "Date Submitted": "date_submitted",
+    "Due Date": "due_date",
     "Date Closed": "date_closed",
     "Submitted By": "submitted_by",
     "Assigned To": "assigned_to",

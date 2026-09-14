@@ -3,4 +3,5 @@ openai
 openpyxl
 pillow
 pillow-heif
+reportlab
 supabase>=2.15.0

@@ -20,9 +20,14 @@ if str(APP_ROOT) not in sys.path:
 
 try:
     from ticket_data import (
+        build_open_tickets_pdf,
         calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
         calculate_average_open_tickets_per_week,
+        calculate_due_date,
+        calculate_on_time_close_rate,
+        calculate_overdue_ticket_count,
+        calculate_stale_open_ticket_flags,
         calculate_urgent_open_ticket_count,
         calculate_open_ticket_count,
         calculate_resolution_rate,
@@ -43,6 +48,7 @@ except ImportError:
 
     ticket_data_module = importlib.util.module_from_spec(ticket_data_spec)
     ticket_data_spec.loader.exec_module(ticket_data_module)
+    build_open_tickets_pdf = ticket_data_module.build_open_tickets_pdf
     calculate_average_resolution_time_hours = (
         ticket_data_module.calculate_average_resolution_time_hours
     )
@@ -51,6 +57,12 @@ except ImportError:
     )
     calculate_average_open_tickets_per_week = (
         ticket_data_module.calculate_average_open_tickets_per_week
+    )
+    calculate_due_date = ticket_data_module.calculate_due_date
+    calculate_on_time_close_rate = ticket_data_module.calculate_on_time_close_rate
+    calculate_overdue_ticket_count = ticket_data_module.calculate_overdue_ticket_count
+    calculate_stale_open_ticket_flags = (
+        ticket_data_module.calculate_stale_open_ticket_flags
     )
     calculate_urgent_open_ticket_count = (
         ticket_data_module.calculate_urgent_open_ticket_count
@@ -127,7 +139,7 @@ if not st.session_state.get("authenticated", False):
         unsafe_allow_html=True,
     )
     entered_password = st.text_input("Password", type="password")
-    login_clicked = st.button("Log in")
+    login_clicked = st.button("Log In")
     if login_clicked:
         if entered_password == APP_PASSWORD:
             st.session_state.authenticated = True
@@ -716,6 +728,7 @@ if submitted:
                 "Code": code,
                 "Priority": priority,
                 "Date Submitted": submitted_at,
+                "Due Date": calculate_due_date(submitted_at),
                 "Date Closed": "",
                 "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
                 "Assigned To": "",
@@ -747,6 +760,21 @@ st.markdown(
     unsafe_allow_html=True,
 )
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
+
+open_tickets_df = (
+    st.session_state.df[
+        st.session_state.df["Resolution Status"].astype(str).str.lower() != "resolved"
+    ]
+    if "Resolution Status" in st.session_state.df.columns
+    else st.session_state.df
+)
+st.download_button(
+    "Print Open Tickets",
+    data=build_open_tickets_pdf(open_tickets_df),
+    file_name="open_tickets.pdf",
+    mime="application/pdf",
+    type="primary",
+)
 
 filter_col, search_col = st.columns([1, 2])
 with filter_col:
@@ -786,15 +814,27 @@ _STATUS_STYLES = {
     "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
     "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
 }
+_PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
+_PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"]}
 
 def _style_ticket_status_col(col):
     return col.map(lambda v: _STATUS_STYLES.get(v, ""))
 
-if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
+def _style_past_due_col(col):
+    return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
+
+display_df = filtered_df.copy()
+if not display_df.empty:
+    display_df[_PAST_DUE_FLAG_COLUMN] = calculate_stale_open_ticket_flags(display_df).map(
+        {True: "Flagged", False: ""}
+    )
+
+if not display_df.empty and "Resolution Status" in display_df.columns:
     styled_view = (
-        filtered_df.style.apply(
+        display_df.style.apply(
             _style_ticket_status_col, subset=["Resolution Status"], axis=0
         )
+        .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
         .set_properties(
             subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
         )
@@ -816,6 +856,11 @@ if not filtered_df.empty and "Resolution Status" in filtered_df.columns:
         row_height=108,
         column_config={
             "Issue": st.column_config.TextColumn("Issue", width="large"),
+            "Due Date": st.column_config.TextColumn("Due Date"),
+            _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
+                _PAST_DUE_FLAG_COLUMN,
+                help="Flags tickets still Pending or In Process one full week after submission",
+            ),
         },
     )
 
@@ -864,6 +909,10 @@ edited_df = st.data_editor(
             help="Current resolution status",
             options=["Pending", "In Process", "Resolved"],
             required=True,
+        ),
+        "Due Date": st.column_config.TextColumn(
+            "Due Date",
+            help="Target resolution date used for SLA metrics",
         ),
         "Date Closed": st.column_config.TextColumn(
             "Date Closed",
@@ -947,24 +996,32 @@ CODE_KPI_LABELS = {
         "Urgent IT\nincidents",
         "IT resolution\nrate",
         "Average IT resolution\ntime (hours)",
+        "Overdue IT\nincidents",
+        "IT on-time\nclose %",
     ),
     "CI": (
         "Open improvement\nrequests",
         "Urgent improvement\nrequests",
         "Improvement completion\nrate",
         "Average improvement cycle\ntime (hours)",
+        "Overdue improvement\nrequests",
+        "Improvement on-time\nclose %",
     ),
     "Maintenance": (
         "Open maintenance\nwork orders",
         "Urgent maintenance\nwork orders",
         "Work order completion\nrate",
         "Average repair time\n(hours)",
+        "Overdue maintenance\nwork orders",
+        "Maintenance on-time\nclose %",
     ),
     "Custodial": (
         "Open custodial\nrequests",
         "Urgent custodial\nrequests",
         "Custodial completion\nrate",
         "Average request completion\ntime (hours)",
+        "Overdue custodial\nrequests",
+        "Custodial on-time\nclose %",
     ),
 }
 
@@ -976,7 +1033,16 @@ for code_name in TICKET_CODES:
     average_resolution_time_hours = calculate_average_resolution_time_hours(
         code_tickets
     )
-    open_label, urgent_label, rate_label, time_label = CODE_KPI_LABELS[code_name]
+    overdue_ticket_count = calculate_overdue_ticket_count(code_tickets)
+    on_time_close_rate = calculate_on_time_close_rate(code_tickets)
+    (
+        open_label,
+        urgent_label,
+        rate_label,
+        time_label,
+        overdue_label,
+        on_time_label,
+    ) = CODE_KPI_LABELS[code_name]
 
     st.markdown(
         f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: #000000; margin: 0.5rem 0;'>{code_name}</div>",
@@ -986,6 +1052,8 @@ for code_name in TICKET_CODES:
     st.metric(urgent_label, format_stat_value(urgent_open_ticket_count))
     st.metric(rate_label, f"{format_stat_value(resolution_rate)}%")
     st.metric(time_label, format_stat_value(average_resolution_time_hours))
+    st.metric(overdue_label, format_stat_value(overdue_ticket_count))
+    st.metric(on_time_label, f"{format_stat_value(on_time_close_rate)}%")
 
 # Comments section for ticket Q&A.
 st.markdown(
