@@ -160,7 +160,7 @@ st.markdown(
 st.write(
     """
     Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model RFID devices, Honeywell RP4D mobile printers, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
+Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model RF devices, Honeywell RP4D mobile printers, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, end user credentials, continuous improvement, inventory control, quality control, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
@@ -293,7 +293,7 @@ def call_local_support_assistant(prompt: str) -> str:
         peripheral_tips = []
         if any(term in lowered_prompt for term in ["rf", "rfid", "radio", "scanner", "honeywell", "ct47", "ct 47", "handheld"]):
             peripheral_tips.append(
-                "For a Honeywell CT47 handheld RFID device: start with a clean reboot — hold the power button and select Reboot. "
+                "For a Honeywell CT47 handheld RF device: start with a clean reboot — hold the power button and select Reboot. "
                 "If it won't connect to the network, go to Settings > Network & Internet, forget the Wi-Fi network, and reconnect. "
                 "If the scanner isn't reading tags or barcodes, clean the scan window and make sure you're within the rated read range. "
                 "If the device is frozen or the battery drains unusually fast, a factory-image reboot from IT may be needed — submit a ticket and we'll take care of it."
@@ -544,7 +544,7 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "cables, ports, and internal components like RAM, CPU, and hard drives); "
     "label printers (specifically the Zebra ZT620 — label loading, calibration, fault lights, and media settings); "
     "multi-function printers (specifically the Ricoh IM 460F — printing, copying, scanning, faxing, scan-to-email/folder, and power-cycle troubleshooting); "
-    "RFID and barcode handheld devices (specifically the Honeywell CT47 — reboots, Wi-Fi reconnection, scan window cleaning, and factory-image requests); "
+    "RF and barcode handheld devices (specifically the Honeywell CT47 — reboots, Wi-Fi reconnection, scan window cleaning, and factory-image requests); "
     "software (applications, installs, updates, "
     "licensing, drivers, crashes, and error messages); peripherals (keyboards, mice, webcams, headsets, docking stations, "
     "and USB devices); the Blue Yonder/JDA warehouse management system (WMS); "
@@ -714,7 +714,7 @@ with st.form("add_ticket_form"):
     priority = st.selectbox("Priority", ["Urgent", "High", "Medium", "Low"])
     submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
-        "Upload Attachment",
+        "Upload attachment",
         type=["heic", "heif", "jpeg", "jpg", "png"],
         accept_multiple_files=True,
     )
