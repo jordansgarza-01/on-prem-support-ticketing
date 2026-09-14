@@ -143,7 +143,7 @@ if not st.session_state.get("authenticated", False):
         unsafe_allow_html=True,
     )
     entered_password = st.text_input("Password", type="password")
-    login_clicked = st.button("Log In")
+    login_clicked = st.button("Log In", type="primary")
     if login_clicked:
         if entered_password == APP_PASSWORD:
             st.session_state.authenticated = True
@@ -639,7 +639,7 @@ if "assistant_messages" not in st.session_state:
 
 assistant_container = st.container()
 with assistant_container:
-    logo_path = APP_ROOT / "IT-01.png"
+    logo_path = APP_ROOT / "IT-001.png"
     avatar_size = 220
     if logo_path.exists():
         image_b64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
@@ -718,7 +718,7 @@ with st.form("add_ticket_form"):
         type=["heic", "heif", "jpeg", "jpg", "png"],
         accept_multiple_files=True,
     )
-    submitted = st.form_submit_button("Submit")
+    submitted = st.form_submit_button("Submit", type="primary")
 
 if submitted:
     # Create a single ticket row from the form inputs and append it to the session dataframe.
@@ -798,7 +798,7 @@ selected_ticket_id = st.selectbox(
     key="delete_ticket_selectbox",
 )
 
-if st.button("Delete selected ticket") and selected_ticket_id:
+if st.button("Delete Selected Ticket", type="primary") and selected_ticket_id:
     try:
         get_ticket_repository().delete_ticket(selected_ticket_id)
     except Exception as exc:
@@ -984,6 +984,7 @@ if detail_ticket_id:
                     data=attachment["data"],
                     file_name=attachment["name"],
                     mime=attachment["mime"],
+                    type="primary",
                 )
     else:
         st.info(f"No attachments for {detail_ticket_id}.")
@@ -1081,7 +1082,7 @@ comment_ticket_id = st.selectbox(
 comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
 comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
 
-if st.button("Post comment"):
+if st.button("Post Comment", type="primary"):
     if not comment_ticket_id:
         st.warning("Please select a ticket.")
     elif not comment_username.strip():
