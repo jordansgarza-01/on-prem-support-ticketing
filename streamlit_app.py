@@ -623,7 +623,7 @@ if "assistant_messages" not in st.session_state:
 
 assistant_container = st.container()
 with assistant_container:
-    logo_path = APP_ROOT / "Owen-GPT.png"
+    logo_path = APP_ROOT / "IT.png"
     avatar_size = 220
     if logo_path.exists():
         image_b64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
