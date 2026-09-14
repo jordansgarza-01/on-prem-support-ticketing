@@ -652,10 +652,11 @@ with assistant_container:
         image_html = ""
 
     availability_badge_html = (
-        "<span style='display: inline-flex; align-items: center; gap: 6px; background-color: #22C55E; "
-        "color: #ffffff; font-family: Helvetica, Arial, sans-serif; font-size: 0.85rem; font-weight: 700; "
-        "padding: 6px 14px; border-radius: 999px; box-shadow: 0 2px 6px rgba(0,0,0,0.15); white-space: nowrap;'>"
-        "<span style='width: 8px; height: 8px; border-radius: 50%; background-color: #ffffff; display: inline-block;'></span>"
+        "<span style='display: inline-flex; align-items: center; gap: 6px; "
+        "background-color: rgba(34, 197, 94, 0.12); color: #15803D; "
+        "font-family: Helvetica, Arial, sans-serif; font-size: 0.8rem; font-weight: 600; "
+        "padding: 4px 10px; border-radius: 999px; white-space: nowrap;'>"
+        "<span style='width: 6px; height: 6px; border-radius: 50%; background-color: #22C55E; display: inline-block;'></span>"
         "Available"
         "</span>"
     )
@@ -685,6 +686,32 @@ with assistant_container:
     for message in st.session_state.assistant_messages:
         with st.chat_message(message["role"], avatar=None):
             st.markdown(message["content"])
+
+    SUPPORT_TOPICS = [
+        "JDA", "CSW", "SAP", "SmartSheet", "SharePoint", "Excel", "Power Platform",
+        "Opendock Nova", "UKG WFM", "Workday HCM", "Honeywell CT47 RF devices",
+        "Honeywell RP4D printers", "Zebra ZT620 label printers", "Ricoh IM 460F MFPs",
+        "HAI Robotics (HaiPick)", "Wireless internet", "Ethernet", "Bluetooth",
+        "End user credentials", "Continuous improvement", "Inventory control",
+        "Quality control", "Industrial automation", "Facilities management",
+        "Maintenance", "Industrial hygiene",
+    ]
+    topic_cards_html = "".join(
+        f"<div style='background-color: {DEEP_BURGUNDY}; color: #ffffff; font-family: Helvetica, Arial, sans-serif; "
+        "font-size: 0.8rem; font-weight: 600; padding: 8px 12px; border-radius: 8px; text-align: center; "
+        "box-shadow: 0 1px 3px rgba(0,0,0,0.15);'>"
+        f"{topic}"
+        "</div>"
+        for topic in SUPPORT_TOPICS
+    )
+    st.markdown(
+        "<div style='margin: 0.5rem 0 0.75rem 0;'>"
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.85rem; font-weight: 700; color: #333333; margin-bottom: 0.5rem;'>Ask about:</div>"
+        "<div style='display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem;'>"
+        f"{topic_cards_html}"
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
 
     chat_submission = st.chat_input("How may I help you today?")
     if chat_submission:
