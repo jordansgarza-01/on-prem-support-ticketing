@@ -634,8 +634,33 @@ def clear_assistant_messages(session_state: dict) -> None:
     session_state["assistant_messages"] = []
 
 
+def submit_assistant_prompt(prompt: str) -> None:
+    """Send a prompt (typed or from a topic card) through the assistant and render the exchange."""
+    prompt = (prompt or "").strip()
+    if not prompt:
+        return
+
+    clear_assistant_messages(st.session_state)
+    st.session_state.assistant_messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user", avatar=None):
+        st.markdown(prompt)
+
+    try:
+        with st.spinner("Processing your request..."):
+            reply = get_assistant_reply(prompt)
+        st.session_state.assistant_messages.append({"role": "assistant", "content": reply})
+        with st.chat_message("assistant", avatar=None):
+            st.markdown(reply)
+    except Exception as exc:
+        error_message = f"I hit a local issue while preparing a response: {exc}"
+        st.session_state.assistant_messages.append({"role": "assistant", "content": error_message})
+        with st.chat_message("assistant", avatar=None):
+            st.markdown(error_message)
+
+
 if "assistant_messages" not in st.session_state:
     st.session_state.assistant_messages = []
+
 
 assistant_container = st.container()
 with assistant_container:
@@ -682,45 +707,43 @@ with assistant_container:
         "Honeywell RP4D printers", "Zebra ZT620 label printers", "Ricoh IM 460F MFPs",
         "HAI Robotics (HaiPick)", "Wireless internet", "Ethernet", "Bluetooth",
     ]
-    topic_cards_html = "".join(
-        f"<div style='background-color: {DEEP_BURGUNDY}; color: #ffffff; font-family: Helvetica, Arial, sans-serif; "
-        "font-size: 0.8rem; font-weight: 600; padding: 8px 12px; border-radius: 8px; text-align: center; "
-        "box-shadow: 0 1px 3px rgba(0,0,0,0.15);'>"
-        f"{topic}"
-        "</div>"
-        for topic in SUPPORT_TOPICS
+
+    st.markdown(
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.85rem; font-weight: 700; color: #333333; margin: 0.5rem 0 0.5rem 0;'>Ask about:</div>",
+        unsafe_allow_html=True,
     )
     st.markdown(
-        "<div style='margin: 0.5rem 0 0.75rem 0;'>"
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.85rem; font-weight: 700; color: #333333; margin-bottom: 0.5rem;'>Ask about:</div>"
-        "<div style='display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.5rem;'>"
-        f"{topic_cards_html}"
-        "</div></div>",
+        f"""
+        <style>
+        .st-key-topic_cards button {{
+            background-color: {DEEP_BURGUNDY} !important;
+            color: #ffffff !important;
+            border: none !important;
+            border-radius: 8px !important;
+            font-family: Helvetica, Arial, sans-serif !important;
+            font-size: 0.8rem !important;
+            font-weight: 600 !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.15) !important;
+        }}
+        </style>
+        """,
         unsafe_allow_html=True,
     )
 
+    # Clicking a topic card sends a ready-made prompt through the same assistant pipeline as typed chat input.
+    topic_card_prompt = None
+    with st.container(key="topic_cards"):
+        cards_per_row = 4
+        for row_start in range(0, len(SUPPORT_TOPICS), cards_per_row):
+            row_topics = SUPPORT_TOPICS[row_start:row_start + cards_per_row]
+            row_columns = st.columns(cards_per_row)
+            for col, topic in zip(row_columns, row_topics):
+                with col:
+                    if st.button(topic, key=f"topic_card_{topic}", use_container_width=True):
+                        topic_card_prompt = f"Tell me about {topic}."
+
     chat_submission = st.chat_input("How may I help you today?")
-    if chat_submission:
-        prompt = (chat_submission or "").strip()
-
-        clear_assistant_messages(st.session_state)
-        st.session_state.assistant_messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user", avatar=None):
-            st.markdown(prompt)
-
-        try:
-            with st.spinner("Processing your request..."):
-                reply = get_assistant_reply(prompt)
-            st.session_state.assistant_messages.append({"role": "assistant", "content": reply})
-            with st.chat_message("assistant", avatar=None):
-                st.markdown(reply)
-        except Exception as exc:
-            st.session_state.assistant_messages.append({
-                "role": "assistant",
-                "content": f"I hit a local issue while preparing a response: {exc}",
-            })
-            with st.chat_message("assistant", avatar=None):
-                st.markdown(f"I hit a local issue while preparing a response: {exc}")
+    submit_assistant_prompt(chat_submission or topic_card_prompt)
 
 
 # Show a section to add a new ticket.
