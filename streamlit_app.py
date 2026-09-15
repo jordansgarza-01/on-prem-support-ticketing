@@ -664,7 +664,7 @@ if "assistant_messages" not in st.session_state:
 
 assistant_container = st.container()
 with assistant_container:
-    logo_path = APP_ROOT / "IT-0010.png"
+    logo_path = APP_ROOT / "IT-0014.png"
     avatar_size = 220
     if logo_path.exists():
         image_b64 = base64.b64encode(logo_path.read_bytes()).decode("utf-8")
@@ -858,7 +858,7 @@ if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
     st.success(f"Deleted {selected_ticket_id}.")
     st.rerun()
 
-# Color-coded read-only view of the resolution status.
+# Color-coded status styling for the editable tickets table.
 _STATUS_STYLES = {
     "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
     "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
@@ -873,22 +873,17 @@ def _style_ticket_status_col(col):
 def _style_past_due_col(col):
     return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
 
-display_df = filtered_df.copy()
-if not display_df.empty:
-    display_df[_PAST_DUE_FLAG_COLUMN] = calculate_stale_open_ticket_flags(display_df).map(
-        {True: "Flagged", False: ""}
-    )
+# Single color-coded, editable table — edits (including Description) save immediately.
+editor_df = filtered_df.copy()
+if "Date Closed" in editor_df.columns:
+    editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
+editor_df[_PAST_DUE_FLAG_COLUMN] = (
+    calculate_stale_open_ticket_flags(editor_df).map({True: "Flagged", False: ""})
+    if not editor_df.empty
+    else ""
+)
 
-if not display_df.empty and "Resolution Status" in display_df.columns:
-    styled_view = (
-        display_df.style.apply(
-            _style_ticket_status_col, subset=["Resolution Status"], axis=0
-        )
-        .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
-        .set_properties(
-            subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
-        )
-    )
+if not editor_df.empty and "Resolution Status" in editor_df.columns:
     st.markdown(
         "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
         "Status legend: "
@@ -898,35 +893,23 @@ if not display_df.empty and "Resolution Status" in display_df.columns:
         "</span></div>",
         unsafe_allow_html=True,
     )
-    st.dataframe(
-        styled_view,
-        width=900,
-        height=600,
-        hide_index=True,
-        row_height=108,
-        column_config={
-            "Issue": st.column_config.TextColumn("Description", width="large"),
-            "Due Date": st.column_config.TextColumn("Due Date"),
-            _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
-                _PAST_DUE_FLAG_COLUMN,
-                help="Flags tickets still Pending or In Process one full week after submission",
-            ),
-        },
+    editor_source = (
+        editor_df.style.apply(
+            _style_ticket_status_col, subset=["Resolution Status"], axis=0
+        )
+        .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
+        .set_properties(
+            subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
+        )
     )
-
-# Editable table — use data_editor for all field edits.
-st.markdown(
-    "<div style='margin: 1rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: #333;'>Edit tickets</span></div>",
-    unsafe_allow_html=True,
-)
-editor_df = filtered_df.copy()
-if "Date Closed" in editor_df.columns:
-    editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
+else:
+    editor_source = editor_df
 
 edited_df = st.data_editor(
-    editor_df,
+    editor_source,
     width="stretch",
     hide_index=True,
+    row_height=108,
     column_config={
         "Issue": st.column_config.TextColumn(
             "Description",
@@ -968,10 +951,16 @@ edited_df = st.data_editor(
             "Date Closed",
             default="",
         ),
+        _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
+            _PAST_DUE_FLAG_COLUMN,
+            help="Flags tickets still Pending or In Process one full week after submission",
+        ),
     },
-    # Disable editing the ID, Date Submitted, and Date Closed columns.
-    disabled=["ID", "Date Submitted", "Date Closed"],
+    # Disable editing the ID, Date Submitted, Date Closed, and computed past-due flag columns.
+    disabled=["ID", "Date Submitted", "Date Closed", _PAST_DUE_FLAG_COLUMN],
 )
+# The past-due flag is computed for display only and isn't part of the persisted ticket schema.
+edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN])
 if "Date Closed" in edited_df.columns:
     edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
 
