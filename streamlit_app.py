@@ -348,6 +348,15 @@ def call_local_support_assistant(prompt: str) -> str:
             "Submit a ticket with those details and we'll get it sorted!"
         )
 
+    if any(term in lowered_prompt for term in ["etq", "reliance"]):
+        return (
+            "Sounds like an ETQ Reliance question! ETQ Reliance is our quality and compliance management system (QMS) — it's what we use for things like "
+            "corrective/preventive actions (CAPA), nonconformance records, document control, audits, and training records. "
+            "If a record or workflow seems stuck, check whether it's waiting on someone else's sign-off or approval step before assuming it's broken. "
+            "If you can't log in or don't see a form/module you expect, that's usually a permissions issue tied to your ETQ Reliance user role. "
+            "Submit a ticket with the record number or form name and what looks wrong, and we'll get it sorted!"
+        )
+
     if (
         not any(term in lowered_prompt for term in [
             "haipick", "hai pick", "hai robotics", "hai system", "hai systems",
@@ -540,7 +549,7 @@ def call_local_support_assistant(prompt: str) -> str:
         )
 
     return (
-        "Hello! I am Owen, your support assistant. I can help with technical issues involving hardware, software, peripherals, JDA, CSW, SAP, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, "
+        "Hello! I am Owen, your support assistant. I can help with technical issues involving hardware, software, peripherals, JDA, CSW, SAP, ETQ Reliance, SmartSheet, SharePoint, Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, "
         "inventory control, quality control, industrial automation, HaiPick robotics (HAI Robotics ACR systems), SPC, SQC, and more. "
         "Just describe what's going on in your own words — no technical jargon needed — and I'll point you in the right direction. "
         "If we need to dig deeper, just submit a ticket and our team will come to you!"
@@ -560,7 +569,8 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "software (applications, installs, updates, "
     "licensing, drivers, crashes, and error messages); peripherals (keyboards, mice, webcams, headsets, docking stations, "
     "and USB devices); the Blue Yonder/JDA warehouse management system (WMS); "
-    "the Client Server Warehousing (CSW) WMS; SAP; SmartSheet; SharePoint; Excel; Microsoft Power Platform "
+    "the Client Server Warehousing (CSW) WMS; SAP; ETQ Reliance (the quality and compliance management system used for CAPA, nonconformance records, document control, audits, and training records); "
+    "SmartSheet; SharePoint; Excel; Microsoft Power Platform "
     "(Power BI, Power Apps, Power Automate, and Power Pages); Opendock Nova dock scheduling; "
     "UKG WFM (timecard management, scheduling, time-off requests, and punch corrections); "
     "Workday HCM (payroll, benefits, direct deposit, W-2s, employee profiles, onboarding/offboarding, and org changes); "

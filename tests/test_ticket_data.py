@@ -452,6 +452,13 @@ def test_call_local_support_assistant_returns_printer_guidance():
     assert "ricoh im 460f" in reply.lower()
 
 
+def test_call_local_support_assistant_returns_etq_reliance_guidance():
+    reply = streamlit_app.call_local_support_assistant("Tell me about ETQ.")
+
+    assert "etq reliance" in reply.lower()
+    assert "capa" in reply.lower()
+
+
 def test_call_local_support_assistant_zebra_guidance_omits_other_printer_models():
     reply = streamlit_app.call_local_support_assistant("My Zebra ZT620 labels are printing blank")
 
