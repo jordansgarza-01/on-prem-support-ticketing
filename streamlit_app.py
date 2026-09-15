@@ -651,21 +651,10 @@ with assistant_container:
     else:
         image_html = ""
 
-    availability_badge_html = (
-        "<span style='display: inline-flex; align-items: center; gap: 6px; "
-        "background-color: rgba(34, 197, 94, 0.12); color: #15803D; "
-        "font-family: Helvetica, Arial, sans-serif; font-size: 0.8rem; font-weight: 600; "
-        "padding: 4px 10px; border-radius: 999px; white-space: nowrap;'>"
-        "<span style='width: 6px; height: 6px; border-radius: 50%; background-color: #22C55E; display: inline-block;'></span>"
-        "Available"
-        "</span>"
-    )
-
     # Flexbox with align-items: stretch keeps the card exactly as tall as the image, regardless of layout width.
     st.markdown(
         "<div style='display: flex; align-items: stretch; gap: 1rem; margin: 1rem 0 1.25rem 0;'>"
         f"<div style='flex: 0 0 auto;'>{image_html}</div>"
-        f"<div style='flex: 0 0 auto; align-self: center;'>{availability_badge_html}</div>"
         "<div style='flex: 1; border: 1px solid #D9D9D9; border-radius: 14px; padding: 1rem; box-sizing: border-box; "
         "background: linear-gradient(135deg, #ffffff 0%, #f7f7f7 100%); box-shadow: 0 2px 8px rgba(0,0,0,0.05); "
         "display: flex; flex-direction: column; justify-content: center;'>"
