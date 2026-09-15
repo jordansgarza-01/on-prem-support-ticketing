@@ -766,6 +766,31 @@ with assistant_container:
                     if st.button(topic, key=f"topic_card_{topic}", use_container_width=True):
                         topic_card_prompt = f"Tell me about {topic}."
 
+    st.markdown(
+        f"""
+        <style>
+        .st-key-start_over_row button {{
+            background-color: #ffffff !important;
+            color: {DEEP_BURGUNDY} !important;
+            border: 1px solid {DEEP_BURGUNDY} !important;
+            border-radius: 8px !important;
+            font-family: Helvetica, Arial, sans-serif !important;
+            font-size: 0.8rem !important;
+            font-weight: 600 !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    start_over_clicked = False
+    with st.container(key="start_over_row"):
+        start_over_cols = st.columns([2, 1, 2])
+        with start_over_cols[1]:
+            start_over_clicked = st.button("Start Over", key="start_over_button", use_container_width=True)
+    if start_over_clicked:
+        clear_assistant_messages(st.session_state)
+        st.rerun()
+
     chat_submission = st.chat_input("How may I help you today?")
     submit_assistant_prompt(chat_submission or topic_card_prompt)
 
