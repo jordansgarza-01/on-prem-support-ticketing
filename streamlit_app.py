@@ -858,6 +858,44 @@ if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
     st.success(f"Deleted {selected_ticket_id}.")
     st.rerun()
 
+# Allow the user to change a ticket's resolution status (kept out of the grid below so the
+# Resolution Status column can stay non-editable there and show its true legend colors).
+status_ticket_col, status_value_col, status_button_col = st.columns([2, 1, 1])
+with status_ticket_col:
+    status_ticket_id = st.selectbox(
+        "Update ticket status",
+        options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
+        index=0,
+        key="update_status_selectbox",
+    )
+with status_value_col:
+    new_resolution_status = st.selectbox(
+        "New status",
+        options=["Pending", "In Process", "Resolved"],
+        key="update_status_value_selectbox",
+    )
+with status_button_col:
+    st.write("")
+    st.write("")
+    apply_status_clicked = st.button("Apply status", type="primary")
+
+if apply_status_clicked and status_ticket_id:
+    ticket_mask = st.session_state.df["ID"].astype(str) == status_ticket_id
+    st.session_state.df.loc[ticket_mask, "Resolution Status"] = new_resolution_status
+    if new_resolution_status.lower() == "resolved":
+        current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
+        if (current_date_closed == "").all():
+            st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
+    else:
+        st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
+    try:
+        get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
+    except Exception as exc:
+        st.error(f"Unable to update {status_ticket_id} in Supabase: {exc}")
+        st.stop()
+    st.success(f"Updated {status_ticket_id} to {new_resolution_status}.")
+    st.rerun()
+
 # Color-coded status styling for the editable tickets table.
 _STATUS_STYLES = {
     "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
@@ -866,15 +904,16 @@ _STATUS_STYLES = {
 }
 _PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
 _PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"]}
-# data_editor ignores Styler background colors on editable Selectbox cells, so RAG-code the
-# Resolution Status values themselves with emoji rather than relying on cell styling.
-_STATUS_RAG_LABELS = {"Pending": "🔴 Pending", "In Process": "🟡 In Process", "Resolved": "🟢 Resolved"}
-_RAG_LABEL_TO_STATUS = {label: status for status, label in _STATUS_RAG_LABELS.items()}
+
+def _style_ticket_status_col(col):
+    return col.map(lambda v: _STATUS_STYLES.get(v, ""))
 
 def _style_past_due_col(col):
     return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
 
 # Single color-coded, editable table — edits (including Description) save immediately.
+# Resolution Status is edited via the "Update ticket status" control above, since data_editor
+# only applies Styler colors (matching the legend) to non-editable columns.
 editor_df = filtered_df.copy()
 if "Date Closed" in editor_df.columns:
     editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
@@ -883,10 +922,6 @@ editor_df[_PAST_DUE_FLAG_COLUMN] = (
     if not editor_df.empty
     else ""
 )
-if "Resolution Status" in editor_df.columns:
-    editor_df["Resolution Status"] = editor_df["Resolution Status"].map(_STATUS_RAG_LABELS).fillna(
-        editor_df["Resolution Status"]
-    )
 
 if not editor_df.empty and "Resolution Status" in editor_df.columns:
     st.markdown(
@@ -899,7 +934,10 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
         unsafe_allow_html=True,
     )
     editor_source = (
-        editor_df.style.apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
+        editor_df.style.apply(
+            _style_ticket_status_col, subset=["Resolution Status"], axis=0
+        )
+        .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
         .set_properties(
             subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
         )
@@ -939,11 +977,9 @@ edited_df = st.data_editor(
             help="Internal notes for this ticket",
             width="large",
         ),
-        "Resolution Status": st.column_config.SelectboxColumn(
+        "Resolution Status": st.column_config.TextColumn(
             "Resolution Status",
-            help="Current resolution status",
-            options=list(_STATUS_RAG_LABELS.values()),
-            required=True,
+            help="Current resolution status — change it above with 'Update ticket status'",
         ),
         "Due Date": st.column_config.TextColumn(
             "Due Date",
@@ -958,15 +994,11 @@ edited_df = st.data_editor(
             help="Flags tickets still Pending or In Process one full week after submission",
         ),
     },
-    # Disable editing the ID, Date Submitted, Date Closed, and computed past-due flag columns.
-    disabled=["ID", "Date Submitted", "Date Closed", _PAST_DUE_FLAG_COLUMN],
+    # Disable editing the ID, Date Submitted, Date Closed, Resolution Status, and past-due flag columns.
+    disabled=["ID", "Date Submitted", "Date Closed", "Resolution Status", _PAST_DUE_FLAG_COLUMN],
 )
 # The past-due flag is computed for display only and isn't part of the persisted ticket schema.
 edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN])
-if "Resolution Status" in edited_df.columns:
-    edited_df["Resolution Status"] = edited_df["Resolution Status"].map(_RAG_LABEL_TO_STATUS).fillna(
-        edited_df["Resolution Status"]
-    )
 if "Date Closed" in edited_df.columns:
     edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
 
