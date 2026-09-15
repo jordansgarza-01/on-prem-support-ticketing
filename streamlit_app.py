@@ -264,10 +264,22 @@ def call_local_support_assistant(prompt: str) -> str:
             "For scan-to-email or scan-to-folder issues, verify network connectivity and confirm the destination address or folder path is still correct. "
             "For fax issues, check that the phone line is connected to the LINE port (not TEL), then power cycle the unit from the power button."
         )
+        matched_printer_tips = []
+        if any(term in lowered_prompt for term in ["zebra", "zt620", "label printer"]):
+            matched_printer_tips.append(zebra_tip)
+        if any(term in lowered_prompt for term in ["rp4d", "mobile printer"]):
+            matched_printer_tips.append(rp4d_tip)
+        if any(term in lowered_prompt for term in ["ricoh", "im 460f", "460f", "mfp", "multi-function", "copier", "copy", "scan", "fax"]):
+            matched_printer_tips.append(ricoh_tip)
+
+        if matched_printer_tips:
+            return (
+                "Sounds like a printer issue. " + " ".join(matched_printer_tips) +
+                " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
+            )
         return (
-            "Sounds like a printer issue. I can help you troubleshoot a Zebra ZT620 label printer, Honeywell RP4D mobile printer, or Ricoh IM 460F multi-function printer. "
-            + zebra_tip + " " + rp4d_tip + " " + ricoh_tip +
-            " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
+            "Sounds like a printer issue. Let me know which printer you have — a Zebra ZT620 label printer, a Honeywell RP4D mobile printer, or a Ricoh IM 460F multi-function printer — "
+            "and I can give you specific steps. In the meantime, submit a ticket and include the exact model plus any error code shown on the device."
         )
 
     if any(term in lowered_prompt for term in ["ethernet", "wired network", "network cable", "lan cable", "rj45"]):
@@ -559,6 +571,8 @@ GITHUB_MODELS_SYSTEM_PROMPT = (
     "statistical process control (SPC); and statistical quality control (SQC); "
     "facilities management, maintenance, and industrial hygiene (including HVAC, lighting, plumbing, access points, ventilation, air-quality, spill, and safe escalation guidance). "
     "Only give HaiPick-specific guidance when the user identifies HAI Robotics, HaiPick, an HAI RCS console, or a HaiPick A3/A3S/A3EL system; do not assume an unrelated robot, AMR, AGV, cobot, or automation issue uses HaiPick. "
+    "Tailor every reply specifically to what the user actually wrote — if they name an exact device model, system, or error, address only that one; "
+    "do not pad the reply with steps for other models or unrelated systems they did not mention. "
     "For every request, act as a helpdesk troubleshooter: identify the likely scope, give a short ordered set of safe checks that the user can perform, explain the purpose of each check in plain language, "
     "ask for the specific model, error, location, or affected record when that would isolate the issue, and state exactly what useful details to include in a ticket if escalation is needed. "
     "Answer with the depth and accuracy of a subject-matter expert on each topic, but always translate that expertise into casual, plain, layman's terms for a non-technical audience. "

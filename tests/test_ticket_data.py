@@ -452,6 +452,15 @@ def test_call_local_support_assistant_returns_printer_guidance():
     assert "ricoh im 460f" in reply.lower()
 
 
+def test_call_local_support_assistant_zebra_guidance_omits_other_printer_models():
+    reply = streamlit_app.call_local_support_assistant("My Zebra ZT620 labels are printing blank")
+
+    assert "zebra zt620" in reply.lower()
+    assert "calibration" in reply.lower()
+    assert "honeywell rp4d" not in reply.lower()
+    assert "ricoh im 460f" not in reply.lower()
+
+
 def test_call_local_support_assistant_returns_rp4d_guidance():
     reply = streamlit_app.call_local_support_assistant("My Honeywell RP4D will not print")
 
