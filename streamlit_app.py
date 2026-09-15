@@ -707,7 +707,7 @@ with assistant_container:
         "<div style='flex: 1; border: 1px solid #D9D9D9; border-radius: 14px; padding: 1rem; box-sizing: border-box; "
         "background: linear-gradient(135deg, #ffffff 0%, #f7f7f7 100%); box-shadow: 0 2px 8px rgba(0,0,0,0.05); "
         "display: flex; flex-direction: column; justify-content: center;'>"
-        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1rem; font-weight: 700; color: #111111; margin-bottom: 0.35rem;'>Hello, and welcome. I am your AI-driven on-prem technical support agent powered by GPT-4o Mini, and Python-3</div>"
+        "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1rem; font-weight: 700; color: #111111; margin-bottom: 0.35rem;'>Hello, and welcome. I am your AI-driven on-premises technical support agent powered by GPT-4o Mini, and Python-3. Please feel free to ask any questions.</div>"
         "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #333333; line-height: 1.45;'>"
         "After hours? Not a problem! I am always available locally to assist with an array of Tier-1 technical support issues. Just ask."
         "</div></div>"
