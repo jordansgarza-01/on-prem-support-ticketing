@@ -866,6 +866,8 @@ _STATUS_STYLES = {
 }
 _PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
 _PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"]}
+_RAG_COLUMN = "RAG"
+_STATUS_RAG_EMOJI = {"Pending": "🔴", "In Process": "🟡", "Resolved": "🟢"}
 
 def _style_ticket_status_col(col):
     return col.map(lambda v: _STATUS_STYLES.get(v, ""))
@@ -880,6 +882,12 @@ if "Date Closed" in editor_df.columns:
 editor_df[_PAST_DUE_FLAG_COLUMN] = (
     calculate_stale_open_ticket_flags(editor_df).map({True: "Flagged", False: ""})
     if not editor_df.empty
+    else ""
+)
+# A dedicated RAG indicator column, since data_editor ignores Styler colors on SelectboxColumn cells.
+editor_df[_RAG_COLUMN] = (
+    editor_df["Resolution Status"].map(_STATUS_RAG_EMOJI).fillna("")
+    if not editor_df.empty and "Resolution Status" in editor_df.columns
     else ""
 )
 
@@ -955,12 +963,21 @@ edited_df = st.data_editor(
             _PAST_DUE_FLAG_COLUMN,
             help="Flags tickets still Pending or In Process one full week after submission",
         ),
+        _RAG_COLUMN: st.column_config.TextColumn(
+            _RAG_COLUMN,
+            help="Red/Amber/Green indicator for Resolution Status",
+            width="small",
+        ),
     },
-    # Disable editing the ID, Date Submitted, Date Closed, and computed past-due flag columns.
-    disabled=["ID", "Date Submitted", "Date Closed", _PAST_DUE_FLAG_COLUMN],
+    column_order=[
+        "ID", "Issue", "Code", "Priority", "Date Submitted", "Due Date", "Date Closed",
+        "Submitted By", "Assigned To", "Notes", _RAG_COLUMN, "Resolution Status", _PAST_DUE_FLAG_COLUMN,
+    ],
+    # Disable editing the ID, Date Submitted, Date Closed, and computed indicator columns.
+    disabled=["ID", "Date Submitted", "Date Closed", _PAST_DUE_FLAG_COLUMN, _RAG_COLUMN],
 )
-# The past-due flag is computed for display only and isn't part of the persisted ticket schema.
-edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN])
+# The past-due flag and RAG indicator are computed for display only, not part of the persisted ticket schema.
+edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN, _RAG_COLUMN])
 if "Date Closed" in edited_df.columns:
     edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
 
