@@ -1158,11 +1158,11 @@ CODE_KPI_LABELS = {
         "Custodial on-time\nclose %",
     ),
     "EHS": (
-        "Open EHS\nincidents",
-        "Urgent EHS\nincidents",
+        "Open EHS\nrequests",
+        "Urgent EHS\nrequests",
         "EHS resolution\nrate",
         "Average EHS resolution\ntime (hours)",
-        "Overdue EHS\nincidents",
+        "Overdue EHS\nrequests",
         "EHS on-time\nclose %",
     ),
 }
