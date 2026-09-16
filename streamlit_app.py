@@ -986,6 +986,16 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
         .set_properties(
             subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
         )
+        .set_properties(
+            subset=["Notes"],
+            **{
+                "white-space": "pre-wrap",
+                "overflow-wrap": "anywhere",
+                "overflow-y": "auto",
+                "max-height": "90px",
+                "display": "block",
+            },
+        )
     )
 else:
     editor_source = editor_df
