@@ -978,6 +978,14 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
         "</span></div>",
         unsafe_allow_html=True,
     )
+    st.markdown(
+        "<div style='margin: 0.25rem 0 0.5rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>"
+        "Past Due legend: "
+        "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Flagged</span>"
+        "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>N/A</span>"
+        "</span></div>",
+        unsafe_allow_html=True,
+    )
     editor_source = (
         editor_df.style.apply(
             _style_ticket_status_col, subset=["Resolution Status"], axis=0
