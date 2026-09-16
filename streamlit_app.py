@@ -992,7 +992,14 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
         )
         .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
         .set_properties(
-            subset=["Issue"], **{"white-space": "pre-wrap", "overflow-wrap": "anywhere"}
+            subset=["Issue"],
+            **{
+                "white-space": "pre-wrap",
+                "overflow-wrap": "anywhere",
+                "overflow-y": "auto",
+                "max-height": "90px",
+                "display": "block",
+            },
         )
         .set_properties(
             subset=["Notes"],
