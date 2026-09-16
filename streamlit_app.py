@@ -971,7 +971,7 @@ editor_df[_PAST_DUE_FLAG_COLUMN] = (
 if not editor_df.empty and "Resolution Status" in editor_df.columns:
     st.markdown(
         "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
-        "Status legend: "
+        "Resolution Status legend: "
         "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Pending</span>"
         "<span style='background:#fff3cd;color:#856404;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>In Process</span>"
         "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>Resolved</span>"
