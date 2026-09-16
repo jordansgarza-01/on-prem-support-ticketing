@@ -144,6 +144,28 @@ def calculate_stale_open_ticket_flags(df: pd.DataFrame, days: int = 7) -> pd.Ser
     return is_open & (days_open >= days)
 
 
+def calculate_past_due_labels(df: pd.DataFrame, days: int = 7) -> pd.Series:
+    """Return per-row Past Due labels: 'Flagged' for stale open tickets, 'N/A' for
+    tickets closed within the `days` threshold, and '' otherwise."""
+    if df.empty:
+        return pd.Series("", index=df.index, dtype="object")
+
+    status_column = _get_resolution_status_column(df)
+    if status_column is None:
+        return pd.Series("", index=df.index, dtype="object")
+
+    is_open = df[status_column].astype(str).str.lower() != "resolved"
+    submitted_dates = _parse_date_column(df, "Date Submitted")
+    closed_dates = _parse_date_column(df, "Date Closed")
+    days_to_close = (closed_dates - submitted_dates).dt.total_seconds() / 86400
+    closed_within_threshold = (~is_open) & closed_dates.notna() & (days_to_close < days)
+
+    labels = pd.Series("", index=df.index, dtype="object")
+    labels[calculate_stale_open_ticket_flags(df, days=days)] = "Flagged"
+    labels[closed_within_threshold] = "N/A"
+    return labels
+
+
 def calculate_overdue_ticket_count(df: pd.DataFrame) -> int:
     """Return the count of unresolved tickets whose Due Date has already passed."""
     status_column = _get_resolution_status_column(df)

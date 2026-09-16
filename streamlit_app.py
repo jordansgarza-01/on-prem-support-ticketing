@@ -28,7 +28,7 @@ try:
         calculate_due_date,
         calculate_on_time_close_rate,
         calculate_overdue_ticket_count,
-        calculate_stale_open_ticket_flags,
+        calculate_past_due_labels,
         calculate_urgent_open_ticket_count,
         calculate_open_ticket_count,
         calculate_resolution_rate,
@@ -62,9 +62,7 @@ except ImportError:
     calculate_due_date = ticket_data_module.calculate_due_date
     calculate_on_time_close_rate = ticket_data_module.calculate_on_time_close_rate
     calculate_overdue_ticket_count = ticket_data_module.calculate_overdue_ticket_count
-    calculate_stale_open_ticket_flags = (
-        ticket_data_module.calculate_stale_open_ticket_flags
-    )
+    calculate_past_due_labels = ticket_data_module.calculate_past_due_labels
     calculate_urgent_open_ticket_count = (
         ticket_data_module.calculate_urgent_open_ticket_count
     )
@@ -952,7 +950,7 @@ _STATUS_STYLES = {
     "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
 }
 _PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
-_PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"]}
+_PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"], "N/A": _STATUS_STYLES["Resolved"]}
 
 def _style_ticket_status_col(col):
     return col.map(lambda v: _STATUS_STYLES.get(v, ""))
@@ -967,9 +965,7 @@ editor_df = filtered_df.copy()
 if "Date Closed" in editor_df.columns:
     editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
 editor_df[_PAST_DUE_FLAG_COLUMN] = (
-    calculate_stale_open_ticket_flags(editor_df).map({True: "Flagged", False: ""})
-    if not editor_df.empty
-    else ""
+    calculate_past_due_labels(editor_df) if not editor_df.empty else ""
 )
 
 if not editor_df.empty and "Resolution Status" in editor_df.columns:
@@ -1040,7 +1036,8 @@ edited_df = st.data_editor(
         ),
         _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
             _PAST_DUE_FLAG_COLUMN,
-            help="Flags tickets still Pending or In Process one full week after submission",
+            help="Flags tickets still Pending or In Process one full week after submission; "
+            "shows N/A for tickets closed within 7 days",
         ),
     },
     # Disable editing the ID, Date Submitted, Date Closed, Resolution Status, and past-due flag columns.
