@@ -11,7 +11,7 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
-TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial")
+TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial", "EHS")
 
 
 def _get_resolution_status_column(df: pd.DataFrame) -> str | None:

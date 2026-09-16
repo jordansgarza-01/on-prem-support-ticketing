@@ -1157,6 +1157,14 @@ CODE_KPI_LABELS = {
         "Overdue custodial\nrequests",
         "Custodial on-time\nclose %",
     ),
+    "EHS": (
+        "Open EHS\nincidents",
+        "Urgent EHS\nincidents",
+        "EHS resolution\nrate",
+        "Average EHS resolution\ntime (hours)",
+        "Overdue EHS\nincidents",
+        "EHS on-time\nclose %",
+    ),
 }
 
 for code_name in TICKET_CODES:
