@@ -375,6 +375,24 @@ def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -
     ]
     column_labels = {"Issue": "Description"}
     wrapped_columns = {"Issue", "Notes"}
+    # Fixed widths (points) so wrapped columns get enough room to keep row heights bounded —
+    # reportlab can't split one table row across pages, so an auto-sized narrow column plus
+    # long text can make a row taller than the page and raise a LayoutError.
+    column_widths = {
+        "ID": 48,
+        "Issue": 85,
+        "Code": 32,
+        "Priority": 32,
+        "Date Submitted": 58,
+        "Due Date": 58,
+        "Date Closed": 58,
+        "Submitted By": 50,
+        "Assigned To": 50,
+        "Notes": 65,
+        "Resolution Status": 46,
+        "Past Due (7+ Days)": 44,
+    }
+    max_wrapped_chars = 300
     available_columns = [column for column in columns if column in df.columns]
 
     if df.empty or not available_columns:
@@ -382,16 +400,21 @@ def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -
     else:
         table_rows = [[column_labels.get(column, column) for column in available_columns]]
         for _, ticket in df[available_columns].iterrows():
-            table_rows.append(
-                [
-                    Paragraph(str(ticket[column]), styles["BodyText"])
-                    if column in wrapped_columns
-                    else str(ticket[column])
-                    for column in available_columns
-                ]
-            )
+            row_cells = []
+            for column in available_columns:
+                value = str(ticket[column])
+                if column in wrapped_columns:
+                    # Cap wrapped text so a single row can never grow taller than a page —
+                    # reportlab cannot split one table row across pages.
+                    if len(value) > max_wrapped_chars:
+                        value = value[:max_wrapped_chars].rstrip() + "…"
+                    row_cells.append(Paragraph(value, styles["BodyText"]))
+                else:
+                    row_cells.append(value)
+            table_rows.append(row_cells)
 
-        table = Table(table_rows, repeatRows=1)
+        col_widths = [column_widths.get(column, 55) for column in available_columns]
+        table = Table(table_rows, repeatRows=1, colWidths=col_widths)
         table.setStyle(
             TableStyle(
                 [
