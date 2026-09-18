@@ -24,7 +24,6 @@ try:
     from ticket_data import (
         ASSIGNEES,
         build_assignee_snapshot_pdf,
-        build_assignee_tickets_pdf,
         calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
         calculate_average_open_tickets_per_week,
@@ -32,7 +31,7 @@ try:
         calculate_on_time_close_rate,
         calculate_overdue_ticket_count,
         calculate_past_due_labels,
-        calculate_performance_trend,
+        calculate_resolution_time_trend,
         calculate_urgent_open_ticket_count,
         calculate_open_ticket_count,
         calculate_resolution_rate,
@@ -44,7 +43,6 @@ try:
         get_distinct_assignees,
         get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
-        PERFORMANCE_TREND_METRICS,
         TICKET_CODES,
     )
 except ImportError:
@@ -58,7 +56,6 @@ except ImportError:
     ticket_data_spec.loader.exec_module(ticket_data_module)
     ASSIGNEES = ticket_data_module.ASSIGNEES
     build_assignee_snapshot_pdf = ticket_data_module.build_assignee_snapshot_pdf
-    build_assignee_tickets_pdf = ticket_data_module.build_assignee_tickets_pdf
     calculate_average_resolution_time_hours = (
         ticket_data_module.calculate_average_resolution_time_hours
     )
@@ -72,7 +69,7 @@ except ImportError:
     calculate_on_time_close_rate = ticket_data_module.calculate_on_time_close_rate
     calculate_overdue_ticket_count = ticket_data_module.calculate_overdue_ticket_count
     calculate_past_due_labels = ticket_data_module.calculate_past_due_labels
-    calculate_performance_trend = ticket_data_module.calculate_performance_trend
+    calculate_resolution_time_trend = ticket_data_module.calculate_resolution_time_trend
     calculate_urgent_open_ticket_count = (
         ticket_data_module.calculate_urgent_open_ticket_count
     )
@@ -85,7 +82,6 @@ except ImportError:
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
     get_distinct_assignees = ticket_data_module.get_distinct_assignees
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
-    PERFORMANCE_TREND_METRICS = ticket_data_module.PERFORMANCE_TREND_METRICS
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
 from ticket_repository import SupabaseTicketRepository, validate_supabase_url
@@ -872,20 +868,6 @@ st.markdown(
     f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Existing tickets</h2></div>",
     unsafe_allow_html=True,
 )
-st.write(f"Number of tickets: `{len(st.session_state.df)}`")
-
-print_assignee_selection = st.selectbox(
-    "Select assignee to print",
-    options=list(ASSIGNEES),
-    key="print_assignee_tickets_selectbox",
-)
-st.download_button(
-    "Print assignee tickets",
-    data=build_assignee_tickets_pdf(st.session_state.df, (print_assignee_selection,)),
-    file_name=f"{print_assignee_selection.replace(' ', '_').lower()}_tickets.pdf",
-    mime="application/pdf",
-    type="primary",
-)
 
 filter_col, search_col = st.columns([1, 2])
 with filter_col:
@@ -1186,9 +1168,6 @@ selected_stats_assignee = st.selectbox(
     key="stats_assignee_filter",
 )
 
-# Read the previous run's trend-metric selection (widget lives in the Performance Trend
-# section below) so the snapshot PDF's trend chart matches what's currently selected.
-current_trend_metric = st.session_state.get("performance_trend_metric", PERFORMANCE_TREND_METRICS[0])
 snapshot_file_name = (
     f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
     if selected_stats_assignee != "All"
@@ -1196,7 +1175,7 @@ snapshot_file_name = (
 )
 st.download_button(
     "Print assignee snapshot",
-    data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee, current_trend_metric),
+    data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
     file_name=snapshot_file_name,
     mime="application/pdf",
     type="primary",
@@ -1210,7 +1189,7 @@ if selected_stats_assignee == "All":
     st.markdown(
         f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
         "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-        "Select a specific person under Filter by assigned to so as to see their statistics and performance trend."
+        "Select a specific person under \"Filter by assigned to\" so as to see their individual statistics, and performance trend."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -1237,58 +1216,40 @@ else:
             )
             render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
 
-    trend_metric = st.selectbox(
-        "Select metric to trend",
-        options=list(PERFORMANCE_TREND_METRICS),
-        key="performance_trend_metric",
-    )
     trend_tickets = filter_tickets_by_assignee(st.session_state.df, selected_stats_assignee)
-    trend_df = calculate_performance_trend(trend_tickets, trend_metric)
+    trend_df = calculate_resolution_time_trend(trend_tickets)
+    plot_df = trend_df.dropna(subset=["moving_average"])
 
-    if trend_df.empty:
-        st.info(f"No {trend_metric.lower()} data yet for {selected_stats_assignee}.")
+    if plot_df.empty:
+        st.markdown(
+            f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+            "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+            f"No average resolution time data yet for {selected_stats_assignee}."
+            "</div>",
+            unsafe_allow_html=True,
+        )
     else:
-        line_df = trend_df.melt(
-            id_vars=["date"],
-            value_vars=["moving_average", "mlr_line"],
-            var_name="series",
-            value_name="metric_value",
-        ).dropna(subset=["metric_value"])
-        line_df["series"] = line_df["series"].map(
-            {"moving_average": "7-Day Moving Average", "mlr_line": "MLR Trend & Forecast"}
-        )
-        band_df = trend_df.dropna(subset=["ci_lower", "ci_upper"]).copy()
-        band_df["series"] = "95% Confidence Interval (Forecast)"
-
-        color_scale = alt.Scale(
-            domain=["7-Day Moving Average", "MLR Trend & Forecast", "95% Confidence Interval (Forecast)"],
-            range=["#1f4e79", "#7A1F2D", "#7A1F2D"],
-        )
-        band_chart = alt.Chart(band_df).mark_area(opacity=0.2).encode(
-            x=alt.X("date:T", title="Date"),
-            y=alt.Y("ci_lower:Q", title=trend_metric),
-            y2="ci_upper:Q",
-            color=alt.Color("series:N", scale=color_scale, title="Legend"),
-        )
-        line_chart = alt.Chart(line_df).mark_line(strokeWidth=2.5).encode(
-            x=alt.X("date:T", title="Date"),
-            y=alt.Y("metric_value:Q", title=trend_metric),
-            color=alt.Color("series:N", scale=color_scale, title="Legend"),
-            strokeDash=alt.StrokeDash(
+        plot_df = plot_df.copy()
+        plot_df["series"] = "7-Day Moving Average"
+        axis_style = {
+            "gridColor": "#D9D9D9",
+            "domainColor": "black",
+            "tickColor": "black",
+            "labelColor": "black",
+            "titleColor": "black",
+        }
+        trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
+            x=alt.X("week:Q", title="Time (Weeks)", axis=alt.Axis(**axis_style)),
+            y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
+            color=alt.Color(
                 "series:N",
-                scale=alt.Scale(
-                    domain=["7-Day Moving Average", "MLR Trend & Forecast"],
-                    range=[[1, 0], [5, 3]],
-                ),
-                legend=None,
+                scale=alt.Scale(domain=["7-Day Moving Average"], range=[DEEP_BURGUNDY]),
+                legend=alt.Legend(title="Legend", labelColor="black", titleColor="black"),
             ),
+        ).properties(
+            height=340, title=f"{selected_stats_assignee} — Average Resolution Time (Hours)"
         )
-        st.altair_chart(
-            (band_chart + line_chart).properties(
-                height=340, title=f"{selected_stats_assignee} — {trend_metric}"
-            ),
-            width="stretch",
-        )
+        st.altair_chart(trend_chart, width="stretch")
 
 # Comments section for ticket Q&A.
 st.markdown(
