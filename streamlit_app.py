@@ -1220,32 +1220,38 @@ st.download_button(
     help="Select a specific person under Filter by assigned to enable this.",
 )
 
-# Aggregated (all-assignee) statistics are intentionally omitted here — they would
-# duplicate the per-assignee breakdowns below once filtered by Filter by assigned to.
-for code_name in TICKET_CODES:
-    code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
-
+# No statistical output is shown until a specific person is selected — aggregated
+# (all-assignee) statistics would duplicate the per-assignee breakdowns below.
+if selected_stats_assignee == "All":
     st.markdown(
-        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
+        f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+        "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+        "Select a specific person under Filter by assigned to so as to see their statistics."
+        "</div>",
         unsafe_allow_html=True,
     )
+else:
+    for code_name in TICKET_CODES:
+        code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
 
-    code_assignees = get_distinct_assignees(code_tickets)
-    if selected_stats_assignee == "All":
-        assignees_for_code = code_assignees
-    else:
+        st.markdown(
+            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
+            unsafe_allow_html=True,
+        )
+
+        code_assignees = get_distinct_assignees(code_tickets)
         assignees_for_code = (
             [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
         )
 
-    if not assignees_for_code:
-        st.caption(f"No assigned tickets for {code_name} yet.")
-    for person in assignees_for_code:
-        st.markdown(
-            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
-            unsafe_allow_html=True,
-        )
-        render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
+        if not assignees_for_code:
+            st.caption(f"No assigned tickets for {code_name} yet.")
+        for person in assignees_for_code:
+            st.markdown(
+                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
+                unsafe_allow_html=True,
+            )
+            render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
 
 # Performance Trend infographic: 7-day moving average with an MLR forward forecast and
 # its 95% confidence interval, scoped to whichever assignee is selected above.
@@ -1258,7 +1264,7 @@ if selected_stats_assignee == "All":
     st.markdown(
         f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
         "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-        "Select a specific person under Filter by assigned to see their performance trend."
+        "Select a specific person under Filter by assigned to so as to see their performance trend."
         "</div>",
         unsafe_allow_html=True,
     )
