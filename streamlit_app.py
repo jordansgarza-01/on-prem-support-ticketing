@@ -25,7 +25,6 @@ try:
         ASSIGNEES,
         build_assignee_snapshot_pdf,
         build_assignee_tickets_pdf,
-        build_open_tickets_pdf,
         calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
         calculate_average_open_tickets_per_week,
@@ -60,7 +59,6 @@ except ImportError:
     ASSIGNEES = ticket_data_module.ASSIGNEES
     build_assignee_snapshot_pdf = ticket_data_module.build_assignee_snapshot_pdf
     build_assignee_tickets_pdf = ticket_data_module.build_assignee_tickets_pdf
-    build_open_tickets_pdf = ticket_data_module.build_open_tickets_pdf
     calculate_average_resolution_time_hours = (
         ticket_data_module.calculate_average_resolution_time_hours
     )
@@ -876,20 +874,6 @@ st.markdown(
 )
 st.write(f"Number of tickets: `{len(st.session_state.df)}`")
 
-open_tickets_df = (
-    st.session_state.df[
-        st.session_state.df["Resolution Status"].astype(str).str.lower() != "resolved"
-    ]
-    if "Resolution Status" in st.session_state.df.columns
-    else st.session_state.df
-)
-st.download_button(
-    "Print open tickets",
-    data=build_open_tickets_pdf(open_tickets_df),
-    file_name="open_tickets.pdf",
-    mime="application/pdf",
-    type="primary",
-)
 print_assignee_selection = st.selectbox(
     "Select assignee to print",
     options=list(ASSIGNEES),
@@ -907,10 +891,10 @@ filter_col, search_col = st.columns([1, 2])
 with filter_col:
     selected_code = st.selectbox("Filter by Code", options=["All", *TICKET_CODES])
 with search_col:
-    search_term = st.text_input(
-        "Search tickets by ticket number", placeholder="e.g. TICKET-1010"
+    selected_table_assignee = st.selectbox(
+        "Filter by assignee", options=["All", *ASSIGNEES], key="table_assignee_filter"
     )
-filtered_df = filter_tickets_by_id(st.session_state.df, search_term)
+filtered_df = filter_tickets_by_assignee(st.session_state.df, selected_table_assignee)
 filtered_df = filter_tickets_by_code(filtered_df, selected_code)
 
 # Allow the user to delete a ticket by selecting its ID.
@@ -1172,9 +1156,9 @@ if detail_ticket_id:
     else:
         st.info(f"No attachments for {detail_ticket_id}.")
 
-# Show some metrics and charts about the ticket.
+# Combined statistics and performance-trend section for the ticket.
 st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance Trend</h2></div>",
     unsafe_allow_html=True,
 )
 
@@ -1220,13 +1204,13 @@ st.download_button(
     help="Select a specific person under Filter by assigned to enable this.",
 )
 
-# No statistical output is shown until a specific person is selected — aggregated
-# (all-assignee) statistics would duplicate the per-assignee breakdowns below.
+# No statistical or performance-trend output is shown until a specific person is
+# selected — aggregated (all-assignee) output would duplicate per-assignee breakdowns.
 if selected_stats_assignee == "All":
     st.markdown(
         f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
         "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-        "Select a specific person under Filter by assigned to so as to see their statistics."
+        "Select a specific person under Filter by assigned to so as to see their statistics and performance trend."
         "</div>",
         unsafe_allow_html=True,
     )
@@ -1253,22 +1237,6 @@ else:
             )
             render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
 
-# Performance Trend infographic: 7-day moving average with an MLR forward forecast and
-# its 95% confidence interval, scoped to whichever assignee is selected above.
-st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Performance Trend</h2></div>",
-    unsafe_allow_html=True,
-)
-
-if selected_stats_assignee == "All":
-    st.markdown(
-        f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
-        "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-        "Select a specific person under Filter by assigned to so as to see their performance trend."
-        "</div>",
-        unsafe_allow_html=True,
-    )
-else:
     trend_metric = st.selectbox(
         "Select metric to trend",
         options=list(PERFORMANCE_TREND_METRICS),
@@ -1379,6 +1347,7 @@ if st.button("Post comment", type="primary"):
             "username": comment_username.strip(),
             "comment": comment_text.strip(),
             "timestamp": get_eastern_us_timestamp(),
+            "likes": [],
         })
         st.session_state.reply_to_comment_id = None
         st.success("Comment posted.")
@@ -1395,20 +1364,43 @@ def _collect_comment_and_descendant_ids(comment_id: str, replies_by_parent: dict
 
 def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0) -> None:
     """Render a comment card, then recursively render its replies indented beneath it."""
+    comment.setdefault("likes", [])
+    likes_html = ""
+    if comment["likes"]:
+        verb = "likes" if len(comment["likes"]) == 1 else "like"
+        likes_html = (
+            "<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.8rem; "
+            f"color: {DEEP_BURGUNDY}; margin-top: 0.4rem;'>"
+            f"\U0001F44D {', '.join(comment['likes'])} {verb} this</div>"
+        )
     st.markdown(
         f"<div style='margin-left: {depth * 24}px; border: 1px solid #D9D9D9; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.6rem; background: #fafafa;'>"
         f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.82rem; color: #555; margin-bottom: 0.25rem;'>"
         f"<strong style='color: #111;'>{comment['username']}</strong> &nbsp;·&nbsp; {comment['ticket_id']} &nbsp;·&nbsp; {comment['timestamp']}"
         f"</div>"
         f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #222;'>{comment['comment']}</div>"
+        f"{likes_html}"
         f"</div>",
         unsafe_allow_html=True,
     )
-    reply_button_col, delete_button_col, _spacer_col = st.columns([1, 1, 2])
+    reply_button_col, like_button_col, delete_button_col, _spacer_col = st.columns([1, 1, 1, 1])
     with reply_button_col:
         if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
             st.session_state.reply_to_comment_id = comment["comment_id"]
             st.rerun()
+    with like_button_col:
+        liker_name = comment_username.strip()
+        already_liked = bool(liker_name) and liker_name in comment["likes"]
+        like_label = "\U0001F44D Unlike" if already_liked else "\U0001F44D Like"
+        if st.button(like_label, key=f"like_button_{comment['comment_id']}"):
+            if not liker_name:
+                st.warning("Please enter your name above before liking a comment.")
+            elif already_liked:
+                comment["likes"].remove(liker_name)
+                st.rerun()
+            else:
+                comment["likes"].append(liker_name)
+                st.rerun()
     with delete_button_col:
         delete_label = "Delete reply" if depth > 0 else "Delete comment"
         if st.button(delete_label, key=f"delete_button_{comment['comment_id']}"):

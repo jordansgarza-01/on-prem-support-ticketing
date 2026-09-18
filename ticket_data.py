@@ -412,11 +412,6 @@ def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -
     return buffer.getvalue()
 
 
-def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
-    """Render open (non-resolved) tickets into a printable PDF table and return its bytes."""
-    return _build_tickets_table_pdf("Open Tickets", df, "No open tickets.")
-
-
 def build_assignee_tickets_pdf(df: pd.DataFrame, assignees: tuple[str, ...] = ASSIGNEES) -> bytes:
     """Render all tickets assigned to any of the given people into a printable PDF."""
     if df.empty or "Assigned To" not in df.columns:
