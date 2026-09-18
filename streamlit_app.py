@@ -871,7 +871,7 @@ st.markdown(
 
 filter_col, search_col = st.columns([1, 2])
 with filter_col:
-    selected_code = st.selectbox("Filter by Code", options=["All", *TICKET_CODES])
+    selected_code = st.selectbox("Filter by code", options=["All", *TICKET_CODES])
 with search_col:
     selected_table_assignee = st.selectbox(
         "Filter by assignee", options=["All", *ASSIGNEES], key="table_assignee_filter"
@@ -1239,7 +1239,7 @@ else:
             "titleColor": "black",
         }
         trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
-            x=alt.X("week:Q", title="Time (Weeks)", axis=alt.Axis(**axis_style)),
+            x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
             y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
             color=alt.Color(
                 "series:N",
@@ -1283,7 +1283,13 @@ reply_target = next(
 if reply_target:
     reply_notice_col, cancel_reply_col = st.columns([4, 1])
     with reply_notice_col:
-        st.info(f"Replying to {reply_target['username']}: \"{reply_target['comment']}\"")
+        st.markdown(
+            f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+            "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+            f"Replying to {reply_target['username']}: &quot;{reply_target['comment']}&quot;"
+            "</div>",
+            unsafe_allow_html=True,
+        )
     with cancel_reply_col:
         st.write("")
         if st.button("Cancel reply"):
@@ -1344,7 +1350,7 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
         f"</div>",
         unsafe_allow_html=True,
     )
-    reply_button_col, like_button_col, delete_button_col, _spacer_col = st.columns([1, 1, 1, 1])
+    reply_button_col, like_button_col, delete_button_col = st.columns(3)
     with reply_button_col:
         if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
             st.session_state.reply_to_comment_id = comment["comment_id"]
@@ -1392,5 +1398,11 @@ if comment_ticket_id:
         for root in reversed(root_comments):
             render_comment_thread(root, replies_by_parent)
     else:
-        st.info(f"No comments yet for {comment_ticket_id}.")
+        st.markdown(
+            f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+            "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+            f"No comments yet for {comment_ticket_id}."
+            "</div>",
+            unsafe_allow_html=True,
+        )
 

@@ -223,38 +223,33 @@ def calculate_daily_average_resolution_time_hours(df: pd.DataFrame) -> pd.Series
 
 
 def calculate_resolution_time_trend(df: pd.DataFrame) -> pd.DataFrame:
-    """Build a 7-day moving average trend of average resolution time (hours).
+    """Build a 7-day moving average trend of average resolution time (hours), sampled
+    once per calendar week.
 
-    Returns a DataFrame with one row per day with columns: date, value,
-    moving_average, week (elapsed weeks since the first day of data, for plotting
-    Average Resolution Time (Hours) as a function of Time (Weeks)).
+    Returns a DataFrame with one row per week with columns: date (that week's end
+    date) and moving_average (the 7-day moving average of Average Resolution Time
+    (hours) as of that date), for plotting Average Resolution Time (Hours) as a
+    function of Time (Week End Date).
     """
-    empty_columns = ["date", "value", "moving_average", "week"]
+    empty_columns = ["date", "moving_average"]
     daily_series = calculate_daily_average_resolution_time_hours(df)
     if daily_series.empty:
         return pd.DataFrame(columns=empty_columns)
 
     full_index = pd.date_range(daily_series.index.min(), daily_series.index.max(), freq="D")
     daily_series = daily_series.reindex(full_index).interpolate(limit_direction="both")
-
     moving_average = daily_series.rolling(window=7, min_periods=1).mean()
 
-    rows = [
-        {
-            "date": date,
-            "value": float(daily_series.iloc[i]),
-            "moving_average": float(moving_average.iloc[i]),
-            "week": round((date - full_index[0]).days / 7, 3),
-        }
-        for i, date in enumerate(full_index)
-    ]
-    return pd.DataFrame(rows, columns=empty_columns)
+    weekly_moving_average = moving_average.resample("W").last().dropna()
+    return pd.DataFrame(
+        {"date": weekly_moving_average.index, "moving_average": weekly_moving_average.to_numpy()}
+    ).reset_index(drop=True)
 
 
 def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460, height: float = 260):
-    """Render the 7-day moving average Average Resolution Time (Hours) vs. Time (Weeks)
-    trend as a reportlab vector Drawing: deep burgundy line, black axis/legend text,
-    light grey gridlines."""
+    """Render the 7-day moving average Average Resolution Time (Hours) vs. Time (Week
+    End Date) trend as a reportlab vector Drawing: deep burgundy line, black
+    axis/legend text, light grey gridlines."""
     from reportlab.graphics.charts.legends import Legend
     from reportlab.graphics.charts.lineplots import LinePlot
     from reportlab.graphics.shapes import Drawing, String
@@ -273,7 +268,7 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
         return drawing
 
     moving_average_series = [
-        (week, value) for week, value in zip(trend_df["week"], trend_df["moving_average"])
+        (date.toordinal(), value) for date, value in zip(trend_df["date"], trend_df["moving_average"])
         if pd.notna(value)
     ]
     if not moving_average_series:
@@ -298,7 +293,10 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
         axis.visibleGrid = True
         axis.gridStrokeColor = color_grid
         axis.labels.fillColor = color_axis
-        axis.labelTextFormat = "%0.1f"
+    plot.xValueAxis.labelTextFormat = lambda value: dt.date.fromordinal(int(value)).strftime("%m/%d/%y")
+    plot.xValueAxis.labels.angle = 30
+    plot.xValueAxis.labels.dy = -8
+    plot.yValueAxis.labelTextFormat = "%0.1f"
 
     drawing.add(plot)
 
@@ -314,7 +312,7 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
     drawing.add(legend)
 
     drawing.add(
-        String(width / 2, 6, "Time (Weeks)", textAnchor="middle", fontSize=8, fillColor=color_axis)
+        String(width / 2, 6, "Time (Week End Date)", textAnchor="middle", fontSize=8, fillColor=color_axis)
     )
 
     return drawing
