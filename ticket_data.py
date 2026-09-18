@@ -293,7 +293,16 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
         axis.visibleGrid = True
         axis.gridStrokeColor = color_grid
         axis.labels.fillColor = color_axis
-    plot.xValueAxis.labelTextFormat = lambda value: dt.date.fromordinal(int(value)).strftime("%m/%d/%y")
+
+    def _format_week_end_date(value):
+        # reportlab's auto-ticking can generate out-of-range ordinals (e.g. for a
+        # single-point series), so guard against ValueError/OverflowError.
+        try:
+            return dt.date.fromordinal(int(round(value))).strftime("%m/%d/%y")
+        except (ValueError, OverflowError):
+            return ""
+
+    plot.xValueAxis.labelTextFormat = _format_week_end_date
     plot.xValueAxis.labels.angle = 30
     plot.xValueAxis.labels.dy = -8
     plot.yValueAxis.labelTextFormat = "%0.1f"
