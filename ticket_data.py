@@ -1,6 +1,7 @@
 import datetime as dt
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 
@@ -11,8 +12,9 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
-TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial", "MHE")
+TICKET_CODES = ("IT", "CI", "MHE", "Maintenance", "Custodial")
 ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
+PERFORMANCE_TREND_METRICS = ("Tickets Submitted", "Tickets Resolved", "Average Resolution Time (hours)")
 
 
 def _get_resolution_status_column(df: pd.DataFrame) -> str | None:
@@ -201,6 +203,150 @@ def calculate_on_time_close_rate(df: pd.DataFrame) -> float:
     return round(float(on_time.sum() / eligible.sum() * 100), 2)
 
 
+# Two-tailed 95% t-distribution critical values by degrees of freedom (1-30); falls back
+# to the normal approximation (1.96) beyond that, avoiding a scipy dependency.
+_T_CRITICAL_95 = {
+    1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306,
+    9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
+    16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 21: 2.080, 22: 2.074,
+    23: 2.069, 24: 2.064, 25: 2.060, 26: 2.056, 27: 2.052, 28: 2.048, 29: 2.045,
+    30: 2.042,
+}
+
+
+def _t_critical_95(degrees_of_freedom: int) -> float:
+    """Return the two-tailed 95% t critical value for the given degrees of freedom."""
+    if degrees_of_freedom < 1:
+        return 1.96
+    return _T_CRITICAL_95.get(degrees_of_freedom, 1.96)
+
+
+def calculate_daily_metric_series(df: pd.DataFrame, metric: str) -> pd.Series:
+    """Return a date-indexed daily series for the requested performance metric."""
+    if df.empty:
+        return pd.Series(dtype="float64")
+
+    if metric == "Tickets Submitted":
+        submitted_dates = _parse_date_column(df, "Date Submitted").dt.normalize()
+        valid_dates = submitted_dates.dropna()
+        if valid_dates.empty:
+            return pd.Series(dtype="float64")
+        return valid_dates.value_counts().sort_index().astype(float)
+
+    status_column = _get_resolution_status_column(df)
+    if status_column is None:
+        return pd.Series(dtype="float64")
+    resolved_df = df[df[status_column].astype(str).str.lower() == "resolved"]
+
+    if metric == "Tickets Resolved":
+        closed_dates = _parse_date_column(resolved_df, "Date Closed").dt.normalize()
+        valid_dates = closed_dates.dropna()
+        if valid_dates.empty:
+            return pd.Series(dtype="float64")
+        return valid_dates.value_counts().sort_index().astype(float)
+
+    if metric == "Average Resolution Time (hours)":
+        submitted_dates = _parse_date_column(resolved_df, "Date Submitted")
+        closed_dates = _parse_date_column(resolved_df, "Date Closed")
+        resolution_hours = (closed_dates - submitted_dates).dt.total_seconds() / 3600
+        valid = closed_dates.notna() & resolution_hours.notna() & (resolution_hours >= 0)
+        if not valid.any():
+            return pd.Series(dtype="float64")
+        day_index = closed_dates[valid].dt.normalize()
+        return pd.Series(resolution_hours[valid].to_numpy(), index=day_index).groupby(level=0).mean().sort_index()
+
+    return pd.Series(dtype="float64")
+
+
+def calculate_performance_trend(df: pd.DataFrame, metric: str, forecast_days: int = 7) -> pd.DataFrame:
+    """Build a 7-day moving average trend with a forward-looking multiple linear
+    regression (MLR) forecast and its 95% confidence interval.
+
+    The MLR model regresses the moving average against a day-index trend term plus
+    sine/cosine day-of-week terms (weekly seasonality), giving more than one predictor.
+    Returns a DataFrame with one row per day (historical, then forecast) with columns:
+    date, value, moving_average, mlr_line, ci_lower, ci_upper, segment.
+    """
+    empty_columns = ["date", "value", "moving_average", "mlr_line", "ci_lower", "ci_upper", "segment"]
+    daily_series = calculate_daily_metric_series(df, metric)
+    if daily_series.empty:
+        return pd.DataFrame(columns=empty_columns)
+
+    full_index = pd.date_range(daily_series.index.min(), daily_series.index.max(), freq="D")
+    daily_series = daily_series.reindex(full_index)
+    if metric == "Average Resolution Time (hours)":
+        daily_series = daily_series.interpolate(limit_direction="both")
+    daily_series = daily_series.fillna(0.0)
+
+    moving_average = daily_series.rolling(window=7, min_periods=1).mean()
+
+    n = len(daily_series)
+    day_index = np.arange(n, dtype=float)
+    weekday = full_index.weekday.to_numpy(dtype=float)
+    design = np.column_stack(
+        [
+            np.ones(n),
+            day_index,
+            np.sin(2 * np.pi * weekday / 7),
+            np.cos(2 * np.pi * weekday / 7),
+        ]
+    )
+    target = moving_average.to_numpy(dtype=float)
+
+    has_model = n >= design.shape[1] + 1
+    if has_model:
+        coefficients, *_ = np.linalg.lstsq(design, target, rcond=None)
+        fitted = design @ coefficients
+        residual_degrees_of_freedom = max(n - design.shape[1], 1)
+        residual_variance = float(np.sum((target - fitted) ** 2) / residual_degrees_of_freedom)
+        xtx_inv = np.linalg.pinv(design.T @ design)
+        t_critical = _t_critical_95(residual_degrees_of_freedom)
+
+    rows = []
+    for i, date in enumerate(full_index):
+        rows.append(
+            {
+                "date": date,
+                "value": float(daily_series.iloc[i]),
+                "moving_average": float(moving_average.iloc[i]),
+                "mlr_line": float(fitted[i]) if has_model else None,
+                "ci_lower": None,
+                "ci_upper": None,
+                "segment": "historical",
+            }
+        )
+
+    if has_model:
+        last_weekday = int(full_index[-1].weekday())
+        for step in range(1, forecast_days + 1):
+            future_day_index = float(n - 1 + step)
+            future_weekday = (last_weekday + step) % 7
+            x0 = np.array(
+                [
+                    1.0,
+                    future_day_index,
+                    np.sin(2 * np.pi * future_weekday / 7),
+                    np.cos(2 * np.pi * future_weekday / 7),
+                ]
+            )
+            predicted = float(x0 @ coefficients)
+            standard_error = float(np.sqrt(max(residual_variance * (x0 @ xtx_inv @ x0), 0.0)))
+            margin = t_critical * standard_error
+            rows.append(
+                {
+                    "date": full_index[-1] + pd.Timedelta(days=step),
+                    "value": None,
+                    "moving_average": None,
+                    "mlr_line": predicted,
+                    "ci_lower": predicted - margin,
+                    "ci_upper": predicted + margin,
+                    "segment": "forecast",
+                }
+            )
+
+    return pd.DataFrame(rows, columns=empty_columns)
+
+
 def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -> bytes:
     """Render a ticket table with the given title into a printable PDF and return its bytes."""
     from io import BytesIO
@@ -283,8 +429,95 @@ def build_assignee_tickets_pdf(df: pd.DataFrame, assignees: tuple[str, ...] = AS
     return _build_tickets_table_pdf(title, matching_df, "No matching tickets.")
 
 
-def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
-    """Render one person's per-category statistics into a printable PDF and return its bytes."""
+def _build_performance_trend_drawing(trend_df: pd.DataFrame, metric: str, width: float = 460, height: float = 260):
+    """Render the performance trend (moving average + MLR forecast + 95% CI) as a
+    reportlab vector Drawing, suitable for embedding directly in a PDF."""
+    from reportlab.graphics.charts.legends import Legend
+    from reportlab.graphics.charts.lineplots import LinePlot
+    from reportlab.graphics.shapes import Drawing, String
+    from reportlab.lib import colors
+
+    drawing = Drawing(width, height)
+    drawing.add(
+        String(width / 2, height - 14, f"Performance Trend \u2014 {metric}", textAnchor="middle", fontName="Helvetica-Bold", fontSize=11)
+    )
+
+    if trend_df.empty:
+        drawing.add(String(width / 2, height / 2, "No trend data available.", textAnchor="middle", fontSize=9))
+        return drawing
+
+    ordinals = [row.date.toordinal() for row in trend_df.itertuples()]
+    moving_average_series = [
+        (o, v) for o, v in zip(ordinals, trend_df["moving_average"]) if pd.notna(v)
+    ]
+    mlr_series = [(o, v) for o, v in zip(ordinals, trend_df["mlr_line"]) if pd.notna(v)]
+    ci_upper_series = [(o, v) for o, v in zip(ordinals, trend_df["ci_upper"]) if pd.notna(v)]
+    ci_lower_series = [(o, v) for o, v in zip(ordinals, trend_df["ci_lower"]) if pd.notna(v)]
+
+    color_moving_average = colors.HexColor("#1f4e79")
+    color_mlr = colors.HexColor("#7A1F2D")
+    color_ci = colors.HexColor("#A6A6A6")
+
+    plot = LinePlot()
+    plot.x = 45
+    plot.y = 40
+    plot.height = height - 85
+    plot.width = width - 80
+    plot.data = [series for series in (moving_average_series, mlr_series, ci_upper_series, ci_lower_series) if series]
+
+    series_index = 0
+    if moving_average_series:
+        plot.lines[series_index].strokeColor = color_moving_average
+        plot.lines[series_index].strokeWidth = 2
+        series_index += 1
+    if mlr_series:
+        plot.lines[series_index].strokeColor = color_mlr
+        plot.lines[series_index].strokeWidth = 2
+        plot.lines[series_index].strokeDashArray = [5, 3]
+        series_index += 1
+    if ci_upper_series:
+        plot.lines[series_index].strokeColor = color_ci
+        plot.lines[series_index].strokeDashArray = [2, 2]
+        series_index += 1
+    if ci_lower_series:
+        plot.lines[series_index].strokeColor = color_ci
+        plot.lines[series_index].strokeDashArray = [2, 2]
+        series_index += 1
+
+    if ordinals:
+        tick_count = min(6, len(sorted(set(ordinals))))
+        unique_ordinals = sorted(set(ordinals))
+        step = max(len(unique_ordinals) // tick_count, 1)
+        tick_values = unique_ordinals[::step]
+        plot.xValueAxis.valueSteps = tick_values
+        plot.xValueAxis.labelTextFormat = lambda value: dt.date.fromordinal(int(value)).strftime("%m/%d")
+    plot.xValueAxis.labels.angle = 30
+    plot.xValueAxis.labels.dy = -8
+    plot.yValueAxis.labelTextFormat = "%0.1f"
+
+    drawing.add(plot)
+
+    legend = Legend()
+    legend.x = width - 15
+    legend.y = height - 25
+    legend.dx = 7
+    legend.dy = 7
+    legend.fontSize = 7.5
+    legend.alignment = "right"
+    legend.colorNamePairs = [
+        (color_moving_average, "7-Day Moving Average"),
+        (color_mlr, "MLR Trend & Forecast"),
+        (color_ci, "95% Confidence Interval (Forecast)"),
+    ]
+    drawing.add(legend)
+
+    return drawing
+
+
+def build_assignee_snapshot_pdf(
+    df: pd.DataFrame, assignee: str, trend_metric: str = "Tickets Submitted"
+) -> bytes:
+    """Render one person's descriptive statistics and performance trend into a printable PDF."""
     from io import BytesIO
 
     from reportlab.lib import colors
@@ -294,9 +527,10 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
 
     styles = getSampleStyleSheet()
     title = f"Statistics Snapshot: {assignee}"
-    elements: list = [Paragraph(title, styles["Title"])]
+    elements: list = [Paragraph(title, styles["Title"]), Spacer(1, 10)]
 
     assignee_tickets = filter_tickets_by_assignee(df, assignee)
+    elements.append(Paragraph("Descriptive Statistics", styles["Heading2"]))
     header = [
         "Code",
         "Open",
@@ -341,6 +575,11 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
         )
     )
     elements.append(table)
+
+    elements.append(Spacer(1, 18))
+    elements.append(Paragraph("Performance Trend", styles["Heading2"]))
+    trend_df = calculate_performance_trend(assignee_tickets, trend_metric)
+    elements.append(_build_performance_trend_drawing(trend_df, trend_metric))
 
     elements.append(Spacer(1, 28))
     signature_rows = [
