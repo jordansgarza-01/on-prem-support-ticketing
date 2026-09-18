@@ -131,7 +131,8 @@ st.markdown(
     [data-baseweb="menu"] li:hover, [data-baseweb="menu"] li[aria-selected="true"] {{ background-color: {DARK_SLATE_CHARCOAL} !important; }}
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
-    [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; }}
+    [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] *,
+    [data-testid="stDataFrame"] [aria-colindex="10"], [data-testid="stDataFrame"] [aria-colindex="10"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; overflow-y: auto !important; max-height: 90px !important; display: block !important; }}
     [data-testid="stMetric"], [data-testid="stMetric"] > div {{ min-width: 0 !important; }}
     [data-testid="stMetricLabel"] {{ display: block !important; max-width: 100% !important; white-space: pre-line !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
     </style>
@@ -875,13 +876,23 @@ open_tickets_df = (
     if "Resolution Status" in st.session_state.df.columns
     else st.session_state.df
 )
-st.download_button(
-    "Print open tickets",
-    data=build_open_tickets_pdf(open_tickets_df),
-    file_name="open_tickets.pdf",
-    mime="application/pdf",
-    type="primary",
-)
+print_open_col, print_assignee_col = st.columns(2)
+with print_open_col:
+    st.download_button(
+        "Print open tickets",
+        data=build_open_tickets_pdf(open_tickets_df),
+        file_name="open_tickets.pdf",
+        mime="application/pdf",
+        type="primary",
+    )
+with print_assignee_col:
+    st.download_button(
+        "Print Assignee Tickets",
+        data=build_assignee_tickets_pdf(st.session_state.df, ASSIGNEES),
+        file_name="assignee_tickets.pdf",
+        mime="application/pdf",
+        type="primary",
+    )
 
 filter_col, search_col = st.columns([1, 2])
 with filter_col:
@@ -1182,13 +1193,13 @@ CODE_KPI_LABELS = {
         "Overdue custodial\nrequests",
         "Custodial on-time\nclose %",
     ),
-    "EHS": (
-        "Open EHS\nrequests",
-        "Urgent EHS\nrequests",
-        "EHS resolution\nrate",
-        "Average EHS resolution\ntime (hours)",
-        "Overdue EHS\nrequests",
-        "EHS on-time\nclose %",
+    "MHE": (
+        "Open MHE\nrequests",
+        "Urgent MHE\nrequests",
+        "MHE resolution\nrate",
+        "Average MHE resolution\ntime (hours)",
+        "Overdue MHE\nrequests",
+        "MHE on-time\nclose %",
     ),
 }
 
@@ -1210,36 +1221,29 @@ for extra_assignee in all_distinct_assignees:
     if extra_assignee not in assignee_filter_options:
         assignee_filter_options.append(extra_assignee)
 
-stats_filter_col, stats_print_tickets_col, stats_print_snapshot_col = st.columns(3)
-with stats_filter_col:
-    selected_stats_assignee = st.selectbox(
-        "Filter by Assigned To",
-        options=assignee_filter_options,
-        key="stats_assignee_filter",
-    )
-with stats_print_tickets_col:
-    st.download_button(
-        "Print Assignee Tickets",
-        data=build_assignee_tickets_pdf(st.session_state.df, ASSIGNEES),
-        file_name="assignee_tickets.pdf",
-        mime="application/pdf",
-        type="primary",
-    )
-with stats_print_snapshot_col:
-    snapshot_file_name = (
-        f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
-        if selected_stats_assignee != "All"
-        else "assignee_snapshot.pdf"
-    )
-    st.download_button(
-        "Print Assignee Snapshot",
-        data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
-        file_name=snapshot_file_name,
-        mime="application/pdf",
-        type="primary",
-        disabled=selected_stats_assignee == "All",
-        help="Select a specific person under Filter by Assigned To to enable this.",
-    )
+# Read the previous run's filter selection so the snapshot button (rendered above the
+# dropdown widget) reflects the currently selected person.
+current_stats_assignee = st.session_state.get("stats_assignee_filter", "All")
+snapshot_file_name = (
+    f"{current_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
+    if current_stats_assignee != "All"
+    else "assignee_snapshot.pdf"
+)
+st.download_button(
+    "Print Assignee Snapshot",
+    data=build_assignee_snapshot_pdf(st.session_state.df, current_stats_assignee),
+    file_name=snapshot_file_name,
+    mime="application/pdf",
+    type="primary",
+    disabled=current_stats_assignee == "All",
+    help="Select a specific person under Filter by Assigned To to enable this.",
+)
+
+selected_stats_assignee = st.selectbox(
+    "Filter by Assigned To",
+    options=assignee_filter_options,
+    key="stats_assignee_filter",
+)
 
 for code_name in TICKET_CODES:
     code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
@@ -1298,6 +1302,8 @@ st.write("Post questions or updates related to a ticket's status or details.")
 
 if "ticket_comments" not in st.session_state:
     st.session_state.ticket_comments = []
+if "reply_to_comment_id" not in st.session_state:
+    st.session_state.reply_to_comment_id = None
 
 comment_ticket_options = (
     [""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""]
@@ -1308,6 +1314,24 @@ comment_ticket_id = st.selectbox(
     index=0,
     key="comment_ticket_selectbox",
 )
+
+reply_target = next(
+    (
+        c for c in st.session_state.ticket_comments
+        if c["comment_id"] == st.session_state.reply_to_comment_id
+    ),
+    None,
+)
+if reply_target:
+    reply_notice_col, cancel_reply_col = st.columns([4, 1])
+    with reply_notice_col:
+        st.info(f"Replying to {reply_target['username']}: \"{reply_target['comment']}\"")
+    with cancel_reply_col:
+        st.write("")
+        if st.button("Cancel reply"):
+            st.session_state.reply_to_comment_id = None
+            st.rerun()
+
 comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
 comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
 
@@ -1320,29 +1344,55 @@ if st.button("Post comment", type="primary"):
         st.warning("Please enter a comment.")
     else:
         st.session_state.ticket_comments.append({
+            "comment_id": uuid.uuid4().hex,
+            "parent_id": st.session_state.reply_to_comment_id,
             "ticket_id": comment_ticket_id,
             "username": comment_username.strip(),
             "comment": comment_text.strip(),
             "timestamp": get_eastern_us_timestamp(),
         })
+        st.session_state.reply_to_comment_id = None
         st.success("Comment posted.")
         st.rerun()
 
-# Display existing comments, newest first.
-ticket_comments_to_show = [
-    c for c in reversed(st.session_state.ticket_comments)
+
+def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0) -> None:
+    """Render a comment card, then recursively render its replies indented beneath it."""
+    st.markdown(
+        f"<div style='margin-left: {depth * 24}px; border: 1px solid #D9D9D9; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.6rem; background: #fafafa;'>"
+        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.82rem; color: #555; margin-bottom: 0.25rem;'>"
+        f"<strong style='color: #111;'>{comment['username']}</strong> &nbsp;·&nbsp; {comment['ticket_id']} &nbsp;·&nbsp; {comment['timestamp']}"
+        f"</div>"
+        f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #222;'>{comment['comment']}</div>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
+        st.session_state.reply_to_comment_id = comment["comment_id"]
+        st.rerun()
+    for reply in sorted(
+        replies_by_parent.get(comment["comment_id"], []), key=lambda c: c["timestamp"]
+    ):
+        render_comment_thread(reply, replies_by_parent, depth + 1)
+
+
+# Display existing comments as threads, newest root comment first.
+visible_comment_ids = {
+    c["comment_id"] for c in st.session_state.ticket_comments
     if not comment_ticket_id or c["ticket_id"] == comment_ticket_id
+}
+replies_by_parent: dict = {}
+for c in st.session_state.ticket_comments:
+    if c["comment_id"] in visible_comment_ids:
+        replies_by_parent.setdefault(c.get("parent_id"), []).append(c)
+
+root_comments = [
+    c for c in st.session_state.ticket_comments
+    if c["comment_id"] in visible_comment_ids and not c.get("parent_id")
 ]
-if ticket_comments_to_show:
-    for entry in ticket_comments_to_show:
-        st.markdown(
-            f"<div style='border: 1px solid #D9D9D9; border-radius: 10px; padding: 0.75rem 1rem; margin-bottom: 0.6rem; background: #fafafa;'>"
-            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.82rem; color: #555; margin-bottom: 0.25rem;'>"
-            f"<strong style='color: #111;'>{entry['username']}</strong> &nbsp;·&nbsp; {entry['ticket_id']} &nbsp;·&nbsp; {entry['timestamp']}"
-            f"</div>"
-            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.95rem; color: #222;'>{entry['comment']}</div>"
-            f"</div>",
-            unsafe_allow_html=True,
-        )
+if root_comments:
+    for root in reversed(root_comments):
+        render_comment_thread(root, replies_by_parent)
 elif comment_ticket_id:
     st.info(f"No comments yet for {comment_ticket_id}.")
+

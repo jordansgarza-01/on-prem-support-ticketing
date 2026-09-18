@@ -11,7 +11,7 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
-TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial", "EHS")
+TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial", "MHE")
 ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
 
 
@@ -290,7 +290,7 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     styles = getSampleStyleSheet()
     title = f"Statistics Snapshot: {assignee}"
@@ -341,6 +341,25 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
         )
     )
     elements.append(table)
+
+    elements.append(Spacer(1, 28))
+    signature_rows = [
+        ["Print:", "_" * 40],
+        ["Signature:", "_" * 40],
+        ["Date:", "_" * 24],
+    ]
+    signature_table = Table(signature_rows, colWidths=[70, 300])
+    signature_table.setStyle(
+        TableStyle(
+            [
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                ("TOPPADDING", (0, 0), (-1, -1), 16),
+                ("ALIGN", (0, 0), (0, -1), "LEFT"),
+            ]
+        )
+    )
+    elements.append(signature_table)
 
     buffer = BytesIO()
     document = SimpleDocTemplate(buffer, pagesize=letter, title=title)
