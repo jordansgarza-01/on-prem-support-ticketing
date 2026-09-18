@@ -137,9 +137,11 @@ st.markdown(
     input[type="checkbox"], input[type="radio"] {{ accent-color: {DEEP_BURGUNDY}; }}
     [data-testid="InputInstructions"], [data-testid="stTextInputInstructions"], [data-testid="stTextAreaInstructions"], [data-testid="stWidgetInstructions"] {{ display: none !important; visibility: hidden !important; }}
     [data-testid="stDataFrame"] [aria-colindex="2"], [data-testid="stDataFrame"] [aria-colindex="2"] *,
-    [data-testid="stDataFrame"] [aria-colindex="10"], [data-testid="stDataFrame"] [aria-colindex="10"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; overflow-y: auto !important; max-height: 90px !important; display: block !important; }}
+    [data-testid="stDataFrame"] [aria-colindex="10"], [data-testid="stDataFrame"] [aria-colindex="10"] * {{ white-space: pre-wrap !important; overflow-wrap: anywhere !important; overflow-y: auto !important; max-height: 180px !important; display: block !important; }}
     [data-testid="stMetric"], [data-testid="stMetric"] > div {{ min-width: 0 !important; }}
     [data-testid="stMetricLabel"] {{ display: block !important; max-width: 100% !important; white-space: pre-line !important; overflow-wrap: anywhere !important; line-height: 1.25 !important; }}
+    [data-testid="stMetricValue"] {{ font-size: 1rem !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.2 !important; }}
+    [data-testid="stMetricValue"] > div {{ overflow: visible !important; text-overflow: clip !important; }}
     </style>
     """,
     unsafe_allow_html=True,
@@ -992,6 +994,14 @@ def _style_past_due_col(col):
 editor_df = filtered_df.copy()
 if "Date Closed" in editor_df.columns:
     editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
+
+table_search_term = st.text_input(
+    "Search existing tickets",
+    placeholder="Enter full or partial ticket number, e.g. the last 3-4 characters",
+    key="table_search_input",
+)
+editor_df = filter_tickets_by_id(editor_df, table_search_term)
+
 editor_df[_PAST_DUE_FLAG_COLUMN] = (
     calculate_past_due_labels(editor_df) if not editor_df.empty else ""
 )
@@ -1025,7 +1035,7 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
                 "white-space": "pre-wrap",
                 "overflow-wrap": "anywhere",
                 "overflow-y": "auto",
-                "max-height": "90px",
+                "max-height": "180px",
                 "display": "block",
             },
         )
@@ -1035,7 +1045,7 @@ if not editor_df.empty and "Resolution Status" in editor_df.columns:
                 "white-space": "pre-wrap",
                 "overflow-wrap": "anywhere",
                 "overflow-y": "auto",
-                "max-height": "90px",
+                "max-height": "180px",
                 "display": "block",
             },
         )
@@ -1046,8 +1056,9 @@ else:
 edited_df = st.data_editor(
     editor_source,
     width="stretch",
+    height=500,
     hide_index=True,
-    row_height=108,
+    row_height=216,
     column_config={
         "Issue": st.column_config.TextColumn(
             "Description",
@@ -1244,7 +1255,13 @@ st.markdown(
 )
 
 if selected_stats_assignee == "All":
-    st.info("Select a specific person under Filter by assigned to see their performance trend.")
+    st.markdown(
+        f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+        "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+        "Select a specific person under Filter by assigned to see their performance trend."
+        "</div>",
+        unsafe_allow_html=True,
+    )
 else:
     trend_metric = st.selectbox(
         "Select metric to trend",
@@ -1362,6 +1379,14 @@ if st.button("Post comment", type="primary"):
         st.rerun()
 
 
+def _collect_comment_and_descendant_ids(comment_id: str, replies_by_parent: dict) -> set:
+    """Return a comment's id plus all of its nested reply ids, for cascade deletes."""
+    ids = {comment_id}
+    for reply in replies_by_parent.get(comment_id, []):
+        ids |= _collect_comment_and_descendant_ids(reply["comment_id"], replies_by_parent)
+    return ids
+
+
 def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0) -> None:
     """Render a comment card, then recursively render its replies indented beneath it."""
     st.markdown(
@@ -1373,32 +1398,40 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
         f"</div>",
         unsafe_allow_html=True,
     )
-    if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
-        st.session_state.reply_to_comment_id = comment["comment_id"]
-        st.rerun()
+    reply_button_col, delete_button_col, _spacer_col = st.columns([1, 1, 2])
+    with reply_button_col:
+        if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
+            st.session_state.reply_to_comment_id = comment["comment_id"]
+            st.rerun()
+    with delete_button_col:
+        delete_label = "Delete reply" if depth > 0 else "Delete comment"
+        if st.button(delete_label, key=f"delete_button_{comment['comment_id']}"):
+            ids_to_remove = _collect_comment_and_descendant_ids(comment["comment_id"], replies_by_parent)
+            st.session_state.ticket_comments = [
+                c for c in st.session_state.ticket_comments if c["comment_id"] not in ids_to_remove
+            ]
+            if st.session_state.reply_to_comment_id in ids_to_remove:
+                st.session_state.reply_to_comment_id = None
+            st.rerun()
     for reply in sorted(
         replies_by_parent.get(comment["comment_id"], []), key=lambda c: c["timestamp"]
     ):
         render_comment_thread(reply, replies_by_parent, depth + 1)
 
 
-# Display existing comments as threads, newest root comment first.
-visible_comment_ids = {
-    c["comment_id"] for c in st.session_state.ticket_comments
-    if not comment_ticket_id or c["ticket_id"] == comment_ticket_id
-}
-replies_by_parent: dict = {}
-for c in st.session_state.ticket_comments:
-    if c["comment_id"] in visible_comment_ids:
+# Comments and their reply threads only populate once a specific ticket is selected.
+if comment_ticket_id:
+    visible_comments = [
+        c for c in st.session_state.ticket_comments if c["ticket_id"] == comment_ticket_id
+    ]
+    replies_by_parent: dict = {}
+    for c in visible_comments:
         replies_by_parent.setdefault(c.get("parent_id"), []).append(c)
 
-root_comments = [
-    c for c in st.session_state.ticket_comments
-    if c["comment_id"] in visible_comment_ids and not c.get("parent_id")
-]
-if root_comments:
-    for root in reversed(root_comments):
-        render_comment_thread(root, replies_by_parent)
-elif comment_ticket_id:
-    st.info(f"No comments yet for {comment_ticket_id}.")
+    root_comments = [c for c in visible_comments if not c.get("parent_id")]
+    if root_comments:
+        for root in reversed(root_comments):
+            render_comment_thread(root, replies_by_parent)
+    else:
+        st.info(f"No comments yet for {comment_ticket_id}.")
 
