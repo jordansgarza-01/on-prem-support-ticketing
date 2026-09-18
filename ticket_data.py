@@ -12,6 +12,7 @@ def get_eastern_us_timestamp() -> str:
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
 TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial", "EHS")
+ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
 
 
 def _get_resolution_status_column(df: pd.DataFrame) -> str | None:
@@ -200,8 +201,8 @@ def calculate_on_time_close_rate(df: pd.DataFrame) -> float:
     return round(float(on_time.sum() / eligible.sum() * 100), 2)
 
 
-def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
-    """Render open (non-resolved) tickets into a printable PDF table and return its bytes."""
+def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -> bytes:
+    """Render a ticket table with the given title into a printable PDF and return its bytes."""
     from io import BytesIO
 
     from reportlab.lib import colors
@@ -210,7 +211,7 @@ def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
 
     styles = getSampleStyleSheet()
-    elements: list = [Paragraph("Open Tickets", styles["Title"])]
+    elements: list = [Paragraph(title, styles["Title"])]
 
     columns = [
         "ID",
@@ -225,7 +226,7 @@ def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
     available_columns = [column for column in columns if column in df.columns]
 
     if df.empty or not available_columns:
-        elements.append(Paragraph("No open tickets.", styles["Normal"]))
+        elements.append(Paragraph(empty_message, styles["Normal"]))
     else:
         table_rows = [available_columns]
         for _, ticket in df[available_columns].iterrows():
@@ -260,7 +261,89 @@ def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
         elements.append(table)
 
     buffer = BytesIO()
-    document = SimpleDocTemplate(buffer, pagesize=landscape(letter), title="Open Tickets")
+    document = SimpleDocTemplate(buffer, pagesize=landscape(letter), title=title)
+    document.build(elements)
+    return buffer.getvalue()
+
+
+def build_open_tickets_pdf(df: pd.DataFrame) -> bytes:
+    """Render open (non-resolved) tickets into a printable PDF table and return its bytes."""
+    return _build_tickets_table_pdf("Open Tickets", df, "No open tickets.")
+
+
+def build_assignee_tickets_pdf(df: pd.DataFrame, assignees: tuple[str, ...] = ASSIGNEES) -> bytes:
+    """Render all tickets assigned to any of the given people into a printable PDF."""
+    if df.empty or "Assigned To" not in df.columns:
+        matching_df = df.iloc[0:0]
+    else:
+        assignee_names = {assignee.casefold() for assignee in assignees}
+        matching_df = df[df["Assigned To"].astype(str).str.casefold().isin(assignee_names)]
+
+    title = f"Tickets Assigned To {', '.join(assignees)}"
+    return _build_tickets_table_pdf(title, matching_df, "No matching tickets.")
+
+
+def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
+    """Render one person's per-category statistics into a printable PDF and return its bytes."""
+    from io import BytesIO
+
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle
+
+    styles = getSampleStyleSheet()
+    title = f"Statistics Snapshot: {assignee}"
+    elements: list = [Paragraph(title, styles["Title"])]
+
+    assignee_tickets = filter_tickets_by_assignee(df, assignee)
+    header = [
+        "Code",
+        "Open",
+        "Urgent Open",
+        "Resolution Rate %",
+        "Avg Resolution (hrs)",
+        "Overdue",
+        "On-Time Close %",
+    ]
+    table_rows = [header]
+    for code_name in TICKET_CODES:
+        code_tickets = filter_tickets_by_code(assignee_tickets, code_name)
+        table_rows.append(
+            [
+                code_name,
+                str(calculate_open_ticket_count(code_tickets)),
+                str(calculate_urgent_open_ticket_count(code_tickets)),
+                str(calculate_resolution_rate(code_tickets)),
+                str(calculate_average_resolution_time_hours(code_tickets)),
+                str(calculate_overdue_ticket_count(code_tickets)),
+                str(calculate_on_time_close_rate(code_tickets)),
+            ]
+        )
+
+    table = Table(table_rows, repeatRows=1)
+    table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7A1F2D")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                (
+                    "ROWBACKGROUNDS",
+                    (0, 1),
+                    (-1, -1),
+                    [colors.white, colors.HexColor("#F7F7F7")],
+                ),
+            ]
+        )
+    )
+    elements.append(table)
+
+    buffer = BytesIO()
+    document = SimpleDocTemplate(buffer, pagesize=letter, title=title)
     document.build(elements)
     return buffer.getvalue()
 
@@ -355,3 +438,22 @@ def filter_tickets_by_code(df: pd.DataFrame, code: str) -> pd.DataFrame:
     return df[df["Code"].astype(str).str.casefold() == code.casefold()].reset_index(
         drop=True
     )
+
+
+def filter_tickets_by_assignee(df: pd.DataFrame, assignee: str) -> pd.DataFrame:
+    """Return tickets assigned to the given person, or all tickets when no person is selected."""
+    if df.empty or not assignee or assignee == "All" or "Assigned To" not in df.columns:
+        return df.copy()
+
+    return df[
+        df["Assigned To"].astype(str).str.casefold() == assignee.casefold()
+    ].reset_index(drop=True)
+
+
+def get_distinct_assignees(df: pd.DataFrame) -> list[str]:
+    """Return sorted distinct non-blank Assigned To values found in the dataframe."""
+    if df.empty or "Assigned To" not in df.columns:
+        return []
+
+    assigned = df["Assigned To"].astype("string").fillna("").str.strip()
+    return sorted({value for value in assigned if value})

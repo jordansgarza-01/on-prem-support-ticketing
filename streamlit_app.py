@@ -21,6 +21,9 @@ if str(APP_ROOT) not in sys.path:
 
 try:
     from ticket_data import (
+        ASSIGNEES,
+        build_assignee_snapshot_pdf,
+        build_assignee_tickets_pdf,
         build_open_tickets_pdf,
         calculate_average_resolution_time_hours,
         calculate_average_closed_tickets_per_week,
@@ -34,8 +37,10 @@ try:
         calculate_resolution_rate,
         create_initial_ticket_dataframe,
         delete_ticket_by_id,
+        filter_tickets_by_assignee,
         filter_tickets_by_code,
         filter_tickets_by_id,
+        get_distinct_assignees,
         get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
         TICKET_CODES,
@@ -49,6 +54,9 @@ except ImportError:
 
     ticket_data_module = importlib.util.module_from_spec(ticket_data_spec)
     ticket_data_spec.loader.exec_module(ticket_data_module)
+    ASSIGNEES = ticket_data_module.ASSIGNEES
+    build_assignee_snapshot_pdf = ticket_data_module.build_assignee_snapshot_pdf
+    build_assignee_tickets_pdf = ticket_data_module.build_assignee_tickets_pdf
     build_open_tickets_pdf = ticket_data_module.build_open_tickets_pdf
     calculate_average_resolution_time_hours = (
         ticket_data_module.calculate_average_resolution_time_hours
@@ -70,8 +78,10 @@ except ImportError:
     calculate_resolution_rate = ticket_data_module.calculate_resolution_rate
     create_initial_ticket_dataframe = ticket_data_module.create_initial_ticket_dataframe
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
+    filter_tickets_by_assignee = ticket_data_module.filter_tickets_by_assignee
     filter_tickets_by_code = ticket_data_module.filter_tickets_by_code
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
+    get_distinct_assignees = ticket_data_module.get_distinct_assignees
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
@@ -1182,6 +1192,55 @@ CODE_KPI_LABELS = {
     ),
 }
 
+
+def render_ticket_metrics_row(tickets_df: pd.DataFrame) -> None:
+    """Render the six standard KPI metrics for a set of tickets in a compact row."""
+    metric_cols = st.columns(6)
+    metric_cols[0].metric("Open", format_stat_value(calculate_open_ticket_count(tickets_df)))
+    metric_cols[1].metric("Urgent", format_stat_value(calculate_urgent_open_ticket_count(tickets_df)))
+    metric_cols[2].metric("Resolution %", f"{format_stat_value(calculate_resolution_rate(tickets_df))}%")
+    metric_cols[3].metric("Avg hours", format_stat_value(calculate_average_resolution_time_hours(tickets_df)))
+    metric_cols[4].metric("Overdue", format_stat_value(calculate_overdue_ticket_count(tickets_df)))
+    metric_cols[5].metric("On-time %", f"{format_stat_value(calculate_on_time_close_rate(tickets_df))}%")
+
+
+all_distinct_assignees = get_distinct_assignees(st.session_state.df)
+assignee_filter_options = ["All"] + list(ASSIGNEES)
+for extra_assignee in all_distinct_assignees:
+    if extra_assignee not in assignee_filter_options:
+        assignee_filter_options.append(extra_assignee)
+
+stats_filter_col, stats_print_tickets_col, stats_print_snapshot_col = st.columns(3)
+with stats_filter_col:
+    selected_stats_assignee = st.selectbox(
+        "Filter by Assigned To",
+        options=assignee_filter_options,
+        key="stats_assignee_filter",
+    )
+with stats_print_tickets_col:
+    st.download_button(
+        "Print Assignee Tickets",
+        data=build_assignee_tickets_pdf(st.session_state.df, ASSIGNEES),
+        file_name="assignee_tickets.pdf",
+        mime="application/pdf",
+        type="primary",
+    )
+with stats_print_snapshot_col:
+    snapshot_file_name = (
+        f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
+        if selected_stats_assignee != "All"
+        else "assignee_snapshot.pdf"
+    )
+    st.download_button(
+        "Print Assignee Snapshot",
+        data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
+        file_name=snapshot_file_name,
+        mime="application/pdf",
+        type="primary",
+        disabled=selected_stats_assignee == "All",
+        help="Select a specific person under Filter by Assigned To to enable this.",
+    )
+
 for code_name in TICKET_CODES:
     code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
     open_ticket_count = calculate_open_ticket_count(code_tickets)
@@ -1211,6 +1270,24 @@ for code_name in TICKET_CODES:
     st.metric(time_label, format_stat_value(average_resolution_time_hours))
     st.metric(overdue_label, format_stat_value(overdue_ticket_count))
     st.metric(on_time_label, f"{format_stat_value(on_time_close_rate)}%")
+
+    code_assignees = get_distinct_assignees(code_tickets)
+    if selected_stats_assignee == "All":
+        assignees_for_code = code_assignees
+    else:
+        assignees_for_code = (
+            [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
+        )
+
+    if not assignees_for_code:
+        st.caption(f"No assigned tickets for {code_name} yet.")
+    for person in assignees_for_code:
+        st.markdown(
+            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
+            unsafe_allow_html=True,
+        )
+        render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
+
 
 # Comments section for ticket Q&A.
 st.markdown(
