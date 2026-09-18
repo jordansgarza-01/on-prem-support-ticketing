@@ -1158,7 +1158,7 @@ if detail_ticket_id:
 
 # Combined statistics and performance-trend section for the ticket.
 st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance Trend</h2></div>",
+    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance trend</h2></div>",
     unsafe_allow_html=True,
 )
 

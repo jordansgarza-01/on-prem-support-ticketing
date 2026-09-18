@@ -366,20 +366,26 @@ def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -
         "Priority",
         "Date Submitted",
         "Due Date",
+        "Date Closed",
+        "Submitted By",
         "Assigned To",
+        "Notes",
         "Resolution Status",
+        "Past Due (7+ Days)",
     ]
+    column_labels = {"Issue": "Description"}
+    wrapped_columns = {"Issue", "Notes"}
     available_columns = [column for column in columns if column in df.columns]
 
     if df.empty or not available_columns:
         elements.append(Paragraph(empty_message, styles["Normal"]))
     else:
-        table_rows = [available_columns]
+        table_rows = [[column_labels.get(column, column) for column in available_columns]]
         for _, ticket in df[available_columns].iterrows():
             table_rows.append(
                 [
                     Paragraph(str(ticket[column]), styles["BodyText"])
-                    if column == "Issue"
+                    if column in wrapped_columns
                     else str(ticket[column])
                     for column in available_columns
                 ]
@@ -413,12 +419,16 @@ def _build_tickets_table_pdf(title: str, df: pd.DataFrame, empty_message: str) -
 
 
 def build_assignee_tickets_pdf(df: pd.DataFrame, assignees: tuple[str, ...] = ASSIGNEES) -> bytes:
-    """Render all tickets assigned to any of the given people into a printable PDF."""
+    """Render all tickets assigned to any of the given people into a printable PDF,
+    mirroring the columns shown in the Existing tickets table."""
     if df.empty or "Assigned To" not in df.columns:
         matching_df = df.iloc[0:0]
     else:
         assignee_names = {assignee.casefold() for assignee in assignees}
-        matching_df = df[df["Assigned To"].astype(str).str.casefold().isin(assignee_names)]
+        matching_df = df[df["Assigned To"].astype(str).str.casefold().isin(assignee_names)].copy()
+
+    if not matching_df.empty:
+        matching_df["Past Due (7+ Days)"] = calculate_past_due_labels(matching_df)
 
     title = f"Tickets Assigned To {', '.join(assignees)}"
     return _build_tickets_table_pdf(title, matching_df, "No matching tickets.")
