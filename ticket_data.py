@@ -246,19 +246,22 @@ def calculate_resolution_time_trend(df: pd.DataFrame) -> pd.DataFrame:
     ).reset_index(drop=True)
 
 
-def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460, height: float = 260):
+def _build_performance_trend_drawing(
+    trend_df: pd.DataFrame, assignee: str, width: float = 420, height: float = 260
+):
     """Render the 7-day moving average Average Resolution Time (Hours) vs. Time (Week
-    End Date) trend as a reportlab vector Drawing: deep burgundy line, black
-    axis/legend text, light grey gridlines."""
+    End Date) trend as a reportlab vector Drawing, mirroring the app's Altair chart:
+    deep burgundy line, black axis/legend text, light grey gridlines."""
     from reportlab.graphics.charts.legends import Legend
     from reportlab.graphics.charts.lineplots import LinePlot
-    from reportlab.graphics.shapes import Drawing, String
+    from reportlab.graphics.shapes import Drawing, Group, String
     from reportlab.lib import colors
 
     drawing = Drawing(width, height)
+    drawing.hAlign = "CENTER"
     drawing.add(
         String(
-            width / 2, height - 14, "Performance Trend \u2014 Average Resolution Time (Hours)",
+            width / 2, height - 14, f"{assignee} \u2014 Average Resolution Time (Hours)",
             textAnchor="middle", fontName="Helvetica-Bold", fontSize=10,
         )
     )
@@ -280,10 +283,10 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
     color_grid = colors.HexColor("#D9D9D9")
 
     plot = LinePlot()
-    plot.x = 50
-    plot.y = 40
-    plot.height = height - 90
-    plot.width = width - 85
+    plot.x = 58
+    plot.y = 42
+    plot.height = height - 92
+    plot.width = width - 95
     plot.data = [moving_average_series]
     plot.lines[0].strokeColor = color_line
     plot.lines[0].strokeWidth = 2
@@ -321,8 +324,18 @@ def _build_performance_trend_drawing(trend_df: pd.DataFrame, width: float = 460,
     drawing.add(legend)
 
     drawing.add(
-        String(width / 2, 6, "Time (Week End Date)", textAnchor="middle", fontSize=8, fillColor=color_axis)
+        String(
+            (plot.x + plot.width / 2), 6, "Time (Week End Date)",
+            textAnchor="middle", fontSize=8, fillColor=color_axis,
+        )
     )
+
+    y_axis_title = String(
+        0, 0, "Average Resolution Time (Hours)", textAnchor="middle", fontSize=8, fillColor=color_axis
+    )
+    y_axis_title_group = Group(y_axis_title)
+    y_axis_title_group.transform = (0, 1, -1, 0, 12, height / 2)
+    drawing.add(y_axis_title_group)
 
     return drawing
 
@@ -332,16 +345,20 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
     from io import BytesIO
 
     from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     styles = getSampleStyleSheet()
+    centered_heading_style = ParagraphStyle(
+        "CenteredHeading2", parent=styles["Heading2"], alignment=TA_CENTER
+    )
     title = f"Statistics Snapshot: {assignee}"
     elements: list = [Paragraph(title, styles["Title"]), Spacer(1, 10)]
 
     assignee_tickets = filter_tickets_by_assignee(df, assignee)
-    elements.append(Paragraph("Descriptive Statistics", styles["Heading2"]))
+    elements.append(Paragraph("Descriptive Statistics", centered_heading_style))
     header = [
         "Code",
         "Open",
@@ -366,7 +383,10 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
             ]
         )
 
-    table = Table(table_rows, repeatRows=1)
+    # Explicit widths (points) summing well under the usable page width (letter
+    # portrait, ~468pt between default 1" margins) so the table never bleeds off
+    # the page; hAlign centers it within that usable width.
+    table = Table(table_rows, repeatRows=1, colWidths=[50, 45, 65, 75, 80, 55, 80], hAlign="CENTER")
     table.setStyle(
         TableStyle(
             [
@@ -376,6 +396,7 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
                 ("FONTSIZE", (0, 0), (-1, -1), 9),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 (
                     "ROWBACKGROUNDS",
                     (0, 1),
@@ -388,29 +409,43 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
     elements.append(table)
 
     elements.append(Spacer(1, 18))
-    elements.append(Paragraph("Performance Trend", styles["Heading2"]))
+    elements.append(Paragraph("Performance Trend", centered_heading_style))
     trend_drawing_index = len(elements)
     trend_df = calculate_resolution_time_trend(assignee_tickets)
-    elements.append(_build_performance_trend_drawing(trend_df))
+    elements.append(_build_performance_trend_drawing(trend_df, assignee))
 
     elements.append(Spacer(1, 28))
-    signature_rows = [
-        ["Print:", "_" * 40],
-        ["Signature:", "_" * 40],
-        ["Date:", "_" * 24],
-    ]
-    signature_table = Table(signature_rows, colWidths=[70, 300])
-    signature_table.setStyle(
-        TableStyle(
-            [
-                ("FONTSIZE", (0, 0), (-1, -1), 10),
-                ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
-                ("TOPPADDING", (0, 0), (-1, -1), 16),
-                ("ALIGN", (0, 0), (0, -1), "LEFT"),
-            ]
+
+    def _build_signoff_section(section_title: str) -> Table:
+        """Build one Print/Signature/Date block, headed by a section title."""
+        rows = [
+            [Paragraph(f"<b>{section_title}</b>", styles["Normal"]), ""],
+            ["Print:", "_" * 26],
+            ["Signature:", "_" * 26],
+            ["Date:", "_" * 16],
+        ]
+        section = Table(rows, colWidths=[60, 150])
+        section.setStyle(
+            TableStyle(
+                [
+                    ("SPAN", (0, 0), (1, 0)),
+                    ("FONTSIZE", (0, 1), (-1, -1), 10),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 8),
+                    ("TOPPADDING", (0, 1), (-1, -1), 14),
+                    ("VALIGN", (0, 0), (-1, -1), "BOTTOM"),
+                    ("ALIGN", (0, 0), (0, -1), "LEFT"),
+                ]
+            )
         )
+        return section
+
+    signoff_table = Table(
+        [[_build_signoff_section("Teammate"), _build_signoff_section("Supervisor")]],
+        colWidths=[220, 220],
+        hAlign="CENTER",
     )
-    elements.append(signature_table)
+    signoff_table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    elements.append(signoff_table)
 
     def _render(elements_to_render: list) -> bytes:
         render_buffer = BytesIO()
