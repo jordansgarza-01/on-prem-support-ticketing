@@ -174,8 +174,13 @@ Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47, Hone
     """
 )
 
+# Bump this whenever SupabaseTicketRepository's public interface changes, so the
+# cached resource below is rebuilt instead of reusing a stale pre-change instance.
+_TICKET_REPOSITORY_VERSION = 2
+
+
 @st.cache_resource(show_spinner=False)
-def get_ticket_repository() -> SupabaseTicketRepository:
+def get_ticket_repository(repository_version: int = _TICKET_REPOSITORY_VERSION) -> SupabaseTicketRepository:
     """Create the server-side Supabase repository from Streamlit secrets."""
     try:
         from supabase import create_client
