@@ -389,6 +389,7 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
 
     elements.append(Spacer(1, 18))
     elements.append(Paragraph("Performance Trend", styles["Heading2"]))
+    trend_drawing_index = len(elements)
     trend_df = calculate_resolution_time_trend(assignee_tickets)
     elements.append(_build_performance_trend_drawing(trend_df))
 
@@ -411,10 +412,22 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
     )
     elements.append(signature_table)
 
-    buffer = BytesIO()
-    document = SimpleDocTemplate(buffer, pagesize=letter, title=title)
-    document.build(elements)
-    return buffer.getvalue()
+    def _render(elements_to_render: list) -> bytes:
+        render_buffer = BytesIO()
+        SimpleDocTemplate(render_buffer, pagesize=letter, title=title).build(elements_to_render)
+        return render_buffer.getvalue()
+
+    try:
+        # document.build() consumes (pops from) the list it's given, so render a
+        # copy and keep the original `elements` intact in case a fallback is needed.
+        return _render(list(elements))
+    except Exception:
+        # Rendering (not just constructing) the trend chart can hit reportlab axis
+        # quirks with unusual data — never let that take down the whole snapshot PDF.
+        elements[trend_drawing_index] = Paragraph(
+            "Performance trend chart unavailable for this data.", styles["Normal"]
+        )
+        return _render(elements)
 
 
 def create_initial_ticket_dataframe() -> pd.DataFrame:
