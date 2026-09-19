@@ -1314,29 +1314,6 @@ comment_ticket_id = st.selectbox(
     key="comment_ticket_selectbox",
 )
 
-reply_target = next(
-    (
-        c for c in st.session_state.ticket_comments
-        if c["comment_id"] == st.session_state.reply_to_comment_id
-    ),
-    None,
-)
-if reply_target:
-    reply_notice_col, cancel_reply_col = st.columns([4, 1])
-    with reply_notice_col:
-        st.markdown(
-            f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
-            "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-            f"Replying to {reply_target['username']}: &quot;{reply_target['comment']}&quot;"
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    with cancel_reply_col:
-        st.write("")
-        if st.button("Cancel reply"):
-            st.session_state.reply_to_comment_id = None
-            st.rerun()
-
 comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
 comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
 
@@ -1350,7 +1327,7 @@ if st.button("Post comment", type="primary"):
     else:
         new_comment = {
             "comment_id": uuid.uuid4().hex,
-            "parent_id": st.session_state.reply_to_comment_id,
+            "parent_id": None,
             "ticket_id": comment_ticket_id,
             "username": comment_username.strip(),
             "comment": comment_text.strip(),
@@ -1363,7 +1340,6 @@ if st.button("Post comment", type="primary"):
             st.error(_format_supabase_comment_error("save comment to Supabase", exc))
             st.stop()
         st.session_state.ticket_comments.append(new_comment)
-        st.session_state.reply_to_comment_id = None
         st.success("Comment posted.")
         st.rerun()
 
@@ -1399,10 +1375,12 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
     )
     reply_button_col, like_button_col, delete_button_col = st.columns(3)
     with reply_button_col:
+        is_replying = st.session_state.reply_to_comment_id == comment["comment_id"]
+        reply_toggle_label = "Cancel reply" if is_replying else "Reply to this comment"
         if st.button(
-            "Reply to this comment", key=f"reply_button_{comment['comment_id']}", width="stretch"
+            reply_toggle_label, key=f"reply_button_{comment['comment_id']}", width="stretch"
         ):
-            st.session_state.reply_to_comment_id = comment["comment_id"]
+            st.session_state.reply_to_comment_id = None if is_replying else comment["comment_id"]
             st.rerun()
     with like_button_col:
         liker_name = comment_username.strip()
@@ -1439,6 +1417,53 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
             if st.session_state.reply_to_comment_id in ids_to_remove:
                 st.session_state.reply_to_comment_id = None
             st.rerun()
+
+    # Inline reply box, indented to sit directly under the comment being replied to —
+    # mirrors typical threaded-chat reply UX (Teams/Facebook) instead of a shared box.
+    if st.session_state.reply_to_comment_id == comment["comment_id"]:
+        _reply_indent_col, reply_form_col = st.columns([depth + 1, 10])
+        with reply_form_col:
+            reply_name = st.text_input(
+                "Your name", placeholder="Enter your name", key=f"reply_name_{comment['comment_id']}"
+            )
+            reply_text = st.text_area(
+                "Reply", placeholder=f"Reply to {comment['username']}…",
+                key=f"reply_text_{comment['comment_id']}",
+            )
+            post_reply_col, cancel_reply_col = st.columns(2)
+            with post_reply_col:
+                post_reply_clicked = st.button(
+                    "Post reply", key=f"post_reply_{comment['comment_id']}", type="primary", width="stretch"
+                )
+            with cancel_reply_col:
+                if st.button("Cancel", key=f"cancel_reply_{comment['comment_id']}", width="stretch"):
+                    st.session_state.reply_to_comment_id = None
+                    st.rerun()
+            if post_reply_clicked:
+                if not reply_name.strip():
+                    st.warning("Please enter your name.")
+                elif not reply_text.strip():
+                    st.warning("Please enter a reply.")
+                else:
+                    new_reply = {
+                        "comment_id": uuid.uuid4().hex,
+                        "parent_id": comment["comment_id"],
+                        "ticket_id": comment["ticket_id"],
+                        "username": reply_name.strip(),
+                        "comment": reply_text.strip(),
+                        "timestamp": get_eastern_us_timestamp(),
+                        "likes": [],
+                    }
+                    try:
+                        get_ticket_repository().create_comment(new_reply)
+                    except Exception as exc:
+                        st.error(_format_supabase_comment_error("save reply to Supabase", exc))
+                        st.stop()
+                    st.session_state.ticket_comments.append(new_reply)
+                    st.session_state.reply_to_comment_id = None
+                    st.success("Reply posted.")
+                    st.rerun()
+
     for reply in sorted(
         replies_by_parent.get(comment["comment_id"], []), key=lambda c: c["timestamp"]
     ):
