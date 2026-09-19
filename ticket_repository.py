@@ -69,6 +69,47 @@ def ticket_row_to_record(ticket: Mapping[str, Any]) -> dict[str, str]:
     return record
 
 
+COMMENT_DISPLAY_TO_DATABASE_COLUMNS = {
+    "comment_id": "id",
+    "parent_id": "parent_id",
+    "ticket_id": "ticket_id",
+    "username": "username",
+    "comment": "comment",
+    "timestamp": "timestamp",
+    "likes": "likes",
+}
+COMMENT_DATABASE_TO_DISPLAY_COLUMNS = {
+    database_name: display_name
+    for display_name, database_name in COMMENT_DISPLAY_TO_DATABASE_COLUMNS.items()
+}
+
+
+def comment_records_to_list(records: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Convert Supabase comment records into the list-of-dict shape used by the UI."""
+    comments: list[dict[str, Any]] = []
+    for record in records:
+        comment: dict[str, Any] = {}
+        for database_name, display_name in COMMENT_DATABASE_TO_DISPLAY_COLUMNS.items():
+            value = record.get(database_name)
+            if display_name == "likes":
+                comment[display_name] = list(value) if value else []
+            elif display_name == "parent_id":
+                comment[display_name] = value or None
+            else:
+                comment[display_name] = "" if value is None else value
+        comments.append(comment)
+    return comments
+
+
+def comment_to_record(comment: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert a UI comment dict into the database record shape."""
+    record: dict[str, Any] = {}
+    for display_name, database_name in COMMENT_DISPLAY_TO_DATABASE_COLUMNS.items():
+        value = comment.get(display_name)
+        record[database_name] = list(value) if display_name == "likes" and value else value
+    return record
+
+
 class SupabaseTicketRepository:
     """Persist tickets through the Supabase table API."""
 
@@ -94,3 +135,23 @@ class SupabaseTicketRepository:
 
     def delete_ticket(self, ticket_id: str) -> None:
         self._client.table("tickets").delete().eq("id", ticket_id).execute()
+
+    def load_comments(self) -> list[dict[str, Any]]:
+        response = (
+            self._client.table("ticket_comments")
+            .select("*")
+            .order("timestamp")
+            .execute()
+        )
+        return comment_records_to_list(response.data or [])
+
+    def create_comment(self, comment: Mapping[str, Any]) -> None:
+        self._client.table("ticket_comments").insert(comment_to_record(comment)).execute()
+
+    def update_comment_likes(self, comment_id: str, likes: list[str]) -> None:
+        self._client.table("ticket_comments").update({"likes": list(likes)}).eq("id", comment_id).execute()
+
+    def delete_comments(self, comment_ids: list[str]) -> None:
+        if not comment_ids:
+            return
+        self._client.table("ticket_comments").delete().in_("id", list(comment_ids)).execute()

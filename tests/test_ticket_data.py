@@ -228,6 +228,102 @@ def test_supabase_ticket_repository_uses_row_level_ticket_operations():
     assert ("eq", "id", "TICKET-1009") in client.calls
 
 
+def test_supabase_ticket_repository_uses_row_level_comment_operations():
+    class FakeResponse:
+        data = [
+            {
+                "id": "COMMENT-1",
+                "parent_id": None,
+                "ticket_id": "TICKET-1009",
+                "username": "Alice",
+                "comment": "Any update?",
+                "timestamp": "2026-08-05 10:00:00 ET",
+                "likes": ["Bob"],
+            }
+        ]
+
+    class FakeQuery:
+        def __init__(self, calls):
+            self.calls = calls
+
+        def select(self, value):
+            self.calls.append(("select", value))
+            return self
+
+        def order(self, column):
+            self.calls.append(("order", column))
+            return self
+
+        def insert(self, record):
+            self.calls.append(("insert", record))
+            return self
+
+        def update(self, record):
+            self.calls.append(("update", record))
+            return self
+
+        def delete(self):
+            self.calls.append(("delete",))
+            return self
+
+        def eq(self, column, value):
+            self.calls.append(("eq", column, value))
+            return self
+
+        def in_(self, column, values):
+            self.calls.append(("in_", column, values))
+            return self
+
+        def execute(self):
+            self.calls.append(("execute",))
+            return FakeResponse()
+
+    class FakeClient:
+        def __init__(self):
+            self.calls = []
+
+        def table(self, name):
+            self.calls.append(("table", name))
+            return FakeQuery(self.calls)
+
+    client = FakeClient()
+    repository = SupabaseTicketRepository(client)
+
+    comments = repository.load_comments()
+    assert comments == [
+        {
+            "comment_id": "COMMENT-1",
+            "parent_id": None,
+            "ticket_id": "TICKET-1009",
+            "username": "Alice",
+            "comment": "Any update?",
+            "timestamp": "2026-08-05 10:00:00 ET",
+            "likes": ["Bob"],
+        }
+    ]
+
+    repository.create_comment(comments[0])
+    repository.update_comment_likes("COMMENT-1", ["Bob", "Carol"])
+    repository.delete_comments(["COMMENT-1", "COMMENT-2"])
+
+    assert ("table", "ticket_comments") in client.calls
+    assert (
+        "insert",
+        {
+            "id": "COMMENT-1",
+            "parent_id": None,
+            "ticket_id": "TICKET-1009",
+            "username": "Alice",
+            "comment": "Any update?",
+            "timestamp": "2026-08-05 10:00:00 ET",
+            "likes": ["Bob"],
+        },
+    ) in client.calls
+    assert ("update", {"likes": ["Bob", "Carol"]}) in client.calls
+    assert ("eq", "id", "COMMENT-1") in client.calls
+    assert ("in_", "id", ["COMMENT-1", "COMMENT-2"]) in client.calls
+
+
 def test_delete_ticket_by_id_removes_the_requested_row():
     df = pd.DataFrame(
         [

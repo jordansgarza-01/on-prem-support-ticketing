@@ -170,7 +170,7 @@ st.markdown(
 st.write(
     """
     Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, ETQ, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47 model RF devices, Honeywell RP4D mobile printers, Zebra ZT620 model label printers, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, continuous improvement, process control, quality control, digital transformation, industrial automation, facilities management, maintenance, and/or industrial hygiene.
+Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47, Honeywell RP4D, Zebra ZT620, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, continuous improvement, process control, quality control, digital transformation, industrial automation, facilities management, maintenance, and/or industrial hygiene.
     """
 )
 
@@ -222,6 +222,21 @@ if "Resolution Status" not in st.session_state.df.columns and "Ticket Status" in
 if "ticket_attachments" not in st.session_state:
     st.session_state.ticket_attachments = {}
 
+# Load persisted comments/replies once per session so they survive across reloads
+# instead of only living in Streamlit's in-memory session state.
+COMMENT_DATA_VERSION = 1
+if (
+    "ticket_comments" not in st.session_state
+    or "comment_data_version" not in st.session_state
+    or st.session_state.comment_data_version != COMMENT_DATA_VERSION
+):
+    try:
+        st.session_state.ticket_comments = get_ticket_repository().load_comments()
+    except Exception as exc:
+        st.session_state.ticket_comments = []
+        st.error(f"Unable to load comments from Supabase: {exc}")
+    st.session_state.comment_data_version = COMMENT_DATA_VERSION
+
 
 def _to_displayable_image(data: bytes, mime: str) -> tuple[bytes, str]:
     """Convert HEIC/HEIF bytes to JPEG; return other formats unchanged."""
@@ -259,12 +274,12 @@ def call_local_support_assistant(prompt: str) -> str:
         and any(term in lowered_prompt for term in ["printer", "print", "zebra", "zt620", "label printer", "ricoh", "im 460f", "460f", "rp4d", "mobile printer", "copier", "copy", "scan", "fax", "mfp", "multi-function"])
     ):
         zebra_tip = (
-            "For a Zebra ZT620 label printer: check that the label roll is loaded correctly and the media type/size in the printer settings matches the labels you're using. "
+            "For a Zebra ZT620: check that the label roll is loaded correctly and the media type/size in the printer settings matches the labels you're using. "
             "If labels are printing blank or misaligned, run calibration from the printer front panel (hold Feed + Cancel on power-up). "
             "If the printer shows a fault light, note the color pattern and include it in your ticket."
         )
         rp4d_tip = (
-            "For a Honeywell RP4D mobile printer: confirm the battery is charged and fully seated, then restart the printer. "
+            "For a Honeywell RP4D: confirm the battery is charged and fully seated, then restart the printer. "
             "Check that the paper roll is loaded with the printable side facing the print head and that the cover is latched. "
             "If it will not connect, turn Bluetooth or Wi-Fi off and back on, then re-pair the printer with the handheld device. "
             "Run a test label from the printer settings and include any status-light pattern or error message in your ticket."
@@ -288,7 +303,7 @@ def call_local_support_assistant(prompt: str) -> str:
                 " If it is still not cooperating, submit a ticket and include the exact model plus any error code shown on the device."
             )
         return (
-            "Sounds like a printer issue. Let me know which printer you have — a Zebra ZT620 label printer, a Honeywell RP4D mobile printer, or a Ricoh IM 460F multi-function printer — "
+            "Sounds like a printer issue. Let me know which printer you have — a Zebra ZT620, a Honeywell RP4D, or a Ricoh IM 460F multi-function printer — "
             "and I can give you specific steps. In the meantime, submit a ticket and include the exact model plus any error code shown on the device."
         )
 
@@ -315,7 +330,7 @@ def call_local_support_assistant(prompt: str) -> str:
         peripheral_tips = []
         if any(term in lowered_prompt for term in ["rf", "rfid", "radio", "scanner", "honeywell", "ct47", "ct 47", "handheld"]):
             peripheral_tips.append(
-                "For a Honeywell CT47 handheld RF device: start with a clean reboot — hold the power button and select Reboot. "
+                "For a Honeywell CT47: start with a clean reboot — hold the power button and select Reboot. "
                 "If it won't connect to the network, go to Settings > Network & Internet, forget the Wi-Fi network, and reconnect. "
                 "If the scanner isn't reading tags or barcodes, clean the scan window and make sure you're within the rated read range. "
                 "If the device is frozen or the battery drains unusually fast, a factory-image reboot from IT may be needed — submit a ticket and we'll take care of it."
@@ -737,8 +752,8 @@ with assistant_container:
 
     SUPPORT_TOPICS = [
         "JDA", "CSW", "SAP", "ETQ", "SmartSheet", "OneDrive", "SharePoint", "Excel", "Power Platform",
-        "Opendock Nova", "UKG WFM", "Workday HCM", "Honeywell CT47 RF devices",
-        "Honeywell RP4D printers", "Zebra ZT620 label printers", "Ricoh IM 460F MFPs",
+        "Opendock Nova", "UKG WFM", "Workday HCM", "Honeywell CT47",
+        "Honeywell RP4D", "Zebra ZT620", "Ricoh IM 460F MFP",
         "HAI Robotics (HaiPick)", "Wireless internet", "Ethernet", "Bluetooth",
     ]
 
@@ -895,6 +910,15 @@ if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
         st.stop()
     st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
     st.session_state.ticket_attachments.pop(selected_ticket_id, None)
+    ticket_comment_ids = [
+        c["comment_id"] for c in st.session_state.ticket_comments if c["ticket_id"] == selected_ticket_id
+    ]
+    if ticket_comment_ids:
+        try:
+            get_ticket_repository().delete_comments(ticket_comment_ids)
+        except Exception as exc:
+            st.error(f"Unable to delete comments for {selected_ticket_id} from Supabase: {exc}")
+            st.stop()
     st.session_state.ticket_comments = [
         c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
     ]
@@ -1258,8 +1282,6 @@ st.markdown(
 )
 st.write("Post questions or updates related to a ticket's status or details.")
 
-if "ticket_comments" not in st.session_state:
-    st.session_state.ticket_comments = []
 if "reply_to_comment_id" not in st.session_state:
     st.session_state.reply_to_comment_id = None
 
@@ -1307,7 +1329,7 @@ if st.button("Post comment", type="primary"):
     elif not comment_text.strip():
         st.warning("Please enter a comment.")
     else:
-        st.session_state.ticket_comments.append({
+        new_comment = {
             "comment_id": uuid.uuid4().hex,
             "parent_id": st.session_state.reply_to_comment_id,
             "ticket_id": comment_ticket_id,
@@ -1315,7 +1337,13 @@ if st.button("Post comment", type="primary"):
             "comment": comment_text.strip(),
             "timestamp": get_eastern_us_timestamp(),
             "likes": [],
-        })
+        }
+        try:
+            get_ticket_repository().create_comment(new_comment)
+        except Exception as exc:
+            st.error(f"Unable to save comment to Supabase: {exc}")
+            st.stop()
+        st.session_state.ticket_comments.append(new_comment)
         st.session_state.reply_to_comment_id = None
         st.success("Comment posted.")
         st.rerun()
@@ -1352,26 +1380,40 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
     )
     reply_button_col, like_button_col, delete_button_col = st.columns(3)
     with reply_button_col:
-        if st.button("Reply to this comment", key=f"reply_button_{comment['comment_id']}"):
+        if st.button(
+            "Reply to this comment", key=f"reply_button_{comment['comment_id']}", width="stretch"
+        ):
             st.session_state.reply_to_comment_id = comment["comment_id"]
             st.rerun()
     with like_button_col:
         liker_name = comment_username.strip()
         already_liked = bool(liker_name) and liker_name in comment["likes"]
         like_label = "\U0001F44D Unlike" if already_liked else "\U0001F44D Like"
-        if st.button(like_label, key=f"like_button_{comment['comment_id']}"):
+        if st.button(like_label, key=f"like_button_{comment['comment_id']}", width="stretch"):
             if not liker_name:
                 st.warning("Please enter your name above before liking a comment.")
-            elif already_liked:
-                comment["likes"].remove(liker_name)
-                st.rerun()
             else:
-                comment["likes"].append(liker_name)
+                updated_likes = list(comment["likes"])
+                if already_liked:
+                    updated_likes.remove(liker_name)
+                else:
+                    updated_likes.append(liker_name)
+                try:
+                    get_ticket_repository().update_comment_likes(comment["comment_id"], updated_likes)
+                except Exception as exc:
+                    st.error(f"Unable to save like to Supabase: {exc}")
+                    st.stop()
+                comment["likes"] = updated_likes
                 st.rerun()
     with delete_button_col:
         delete_label = "Delete reply" if depth > 0 else "Delete comment"
-        if st.button(delete_label, key=f"delete_button_{comment['comment_id']}"):
+        if st.button(delete_label, key=f"delete_button_{comment['comment_id']}", width="stretch"):
             ids_to_remove = _collect_comment_and_descendant_ids(comment["comment_id"], replies_by_parent)
+            try:
+                get_ticket_repository().delete_comments(list(ids_to_remove))
+            except Exception as exc:
+                st.error(f"Unable to delete comment from Supabase: {exc}")
+                st.stop()
             st.session_state.ticket_comments = [
                 c for c in st.session_state.ticket_comments if c["comment_id"] not in ids_to_remove
             ]
