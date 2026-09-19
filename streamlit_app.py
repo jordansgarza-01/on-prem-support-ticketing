@@ -227,6 +227,20 @@ if "Resolution Status" not in st.session_state.df.columns and "Ticket Status" in
 if "ticket_attachments" not in st.session_state:
     st.session_state.ticket_attachments = {}
 
+
+def _format_supabase_comment_error(action: str, exc: Exception) -> str:
+    """Return an actionable message when comments fail because the ticket_comments
+    table hasn't been created yet, otherwise the raw Supabase error."""
+    message = str(exc)
+    if "ticket_comments" in message and ("schema cache" in message or "PGRST205" in message):
+        return (
+            f"Unable to {action}: the ticket_comments table doesn't exist in Supabase yet. "
+            "Run migrations/0002_add_ticket_comments_table.sql in the Supabase SQL editor, "
+            "then reload the app."
+        )
+    return f"Unable to {action}: {exc}"
+
+
 # Load persisted comments/replies once per session so they survive across reloads
 # instead of only living in Streamlit's in-memory session state.
 COMMENT_DATA_VERSION = 1
@@ -239,7 +253,7 @@ if (
         st.session_state.ticket_comments = get_ticket_repository().load_comments()
     except Exception as exc:
         st.session_state.ticket_comments = []
-        st.error(f"Unable to load comments from Supabase: {exc}")
+        st.error(_format_supabase_comment_error("load comments from Supabase", exc))
     st.session_state.comment_data_version = COMMENT_DATA_VERSION
 
 
@@ -922,7 +936,7 @@ if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
         try:
             get_ticket_repository().delete_comments(ticket_comment_ids)
         except Exception as exc:
-            st.error(f"Unable to delete comments for {selected_ticket_id} from Supabase: {exc}")
+            st.error(_format_supabase_comment_error(f"delete comments for {selected_ticket_id} from Supabase", exc))
             st.stop()
     st.session_state.ticket_comments = [
         c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
@@ -1346,7 +1360,7 @@ if st.button("Post comment", type="primary"):
         try:
             get_ticket_repository().create_comment(new_comment)
         except Exception as exc:
-            st.error(f"Unable to save comment to Supabase: {exc}")
+            st.error(_format_supabase_comment_error("save comment to Supabase", exc))
             st.stop()
         st.session_state.ticket_comments.append(new_comment)
         st.session_state.reply_to_comment_id = None
@@ -1406,7 +1420,7 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
                 try:
                     get_ticket_repository().update_comment_likes(comment["comment_id"], updated_likes)
                 except Exception as exc:
-                    st.error(f"Unable to save like to Supabase: {exc}")
+                    st.error(_format_supabase_comment_error("save like to Supabase", exc))
                     st.stop()
                 comment["likes"] = updated_likes
                 st.rerun()
@@ -1417,7 +1431,7 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
             try:
                 get_ticket_repository().delete_comments(list(ids_to_remove))
             except Exception as exc:
-                st.error(f"Unable to delete comment from Supabase: {exc}")
+                st.error(_format_supabase_comment_error("delete comment from Supabase", exc))
                 st.stop()
             st.session_state.ticket_comments = [
                 c for c in st.session_state.ticket_comments if c["comment_id"] not in ids_to_remove
