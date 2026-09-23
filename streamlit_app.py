@@ -1388,7 +1388,13 @@ def render_comment_thread(comment: dict, replies_by_parent: dict, depth: int = 0
         like_label = "\U0001F44D Unlike" if already_liked else "\U0001F44D Like"
         if st.button(like_label, key=f"like_button_{comment['comment_id']}", width="stretch"):
             if not liker_name:
-                st.warning("Please enter your name above before liking a comment.")
+                st.markdown(
+                    f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+                    "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+                    "Please enter your name above before liking a comment."
+                    "</div>",
+                    unsafe_allow_html=True,
+                )
             else:
                 updated_likes = list(comment["likes"])
                 if already_liked:
