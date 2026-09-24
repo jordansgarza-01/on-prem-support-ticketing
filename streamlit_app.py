@@ -153,6 +153,40 @@ APP_PASSWORD = "Platinum2025"
 INTERNAL_MANAGEMENT_PASSWORD = "ServiceStats01@!"
 TICKET_MANAGEMENT_PASSWORD = "ULSDfuelHC01@$$"
 
+
+# Navigation/login state changes are done via on_click callbacks (run before the script
+# reruns) rather than inline `if st.button(...): ... st.rerun()`, since the latter pattern
+# is unreliable for widgets nested inside st.popover.
+def _go_to_view(view_name: str) -> None:
+    st.session_state.current_view = view_name
+
+
+def _go_home_from_my_tickets() -> None:
+    st.session_state.current_view = "home"
+    st.session_state.my_tickets_person = None
+    st.session_state.pop("my_tickets_person_selectbox", None)
+
+
+def _attempt_internal_management_login() -> None:
+    if st.session_state.get("ism_password_input", "") == INTERNAL_MANAGEMENT_PASSWORD:
+        st.session_state.internal_management_authenticated = True
+        st.session_state.current_view = "internal_management"
+        st.session_state.ism_login_error = False
+        st.session_state.pop("ism_password_input", None)
+    else:
+        st.session_state.ism_login_error = True
+
+
+def _attempt_ticket_management_login() -> None:
+    if st.session_state.get("tm_password_input", "") == TICKET_MANAGEMENT_PASSWORD:
+        st.session_state.ticket_management_authenticated = True
+        st.session_state.current_view = "ticket_management"
+        st.session_state.tm_login_error = False
+        st.session_state.pop("tm_password_input", None)
+    else:
+        st.session_state.tm_login_error = True
+
+
 if not st.session_state.get("authenticated", False):
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY};'>P&HS | Internal Support Portal</h1></div>",
@@ -217,41 +251,33 @@ with header_ism_col:
     with st.container(key="internal_management_portal"):
         with st.popover("Performance Management", use_container_width=True):
             if st.session_state.get("internal_management_authenticated", False):
-                if st.button("Open Performance Management", key="ism_open_button"):
-                    st.session_state.current_view = "internal_management"
-                    st.rerun()
-            else:
-                ism_password_input = st.text_input(
-                    "Password", type="password", key="ism_password_input"
+                st.button(
+                    "Open Performance Management",
+                    key="ism_open_button",
+                    on_click=_go_to_view,
+                    args=("internal_management",),
                 )
-                if st.button("Log in", key="ism_unlock_button"):
-                    if ism_password_input == INTERNAL_MANAGEMENT_PASSWORD:
-                        st.session_state.internal_management_authenticated = True
-                        st.session_state.current_view = "internal_management"
-                        st.session_state.pop("ism_password_input", None)
-                        st.rerun()
-                    else:
-                        st.error("The password you entered is incorrect. Please try again.")
+            else:
+                st.text_input("Password", type="password", key="ism_password_input")
+                st.button("Log in", key="ism_unlock_button", on_click=_attempt_internal_management_login)
+                if st.session_state.pop("ism_login_error", False):
+                    st.error("The password you entered is incorrect. Please try again.")
 
 with header_ticket_mgmt_col:
     with st.container(key="ticket_management_portal"):
         with st.popover("Ticket Management", use_container_width=True):
             if st.session_state.get("ticket_management_authenticated", False):
-                if st.button("Open Ticket Management", key="tm_open_button"):
-                    st.session_state.current_view = "ticket_management"
-                    st.rerun()
-            else:
-                tm_password_input = st.text_input(
-                    "Password", type="password", key="tm_password_input"
+                st.button(
+                    "Open Ticket Management",
+                    key="tm_open_button",
+                    on_click=_go_to_view,
+                    args=("ticket_management",),
                 )
-                if st.button("Log in", key="tm_unlock_button"):
-                    if tm_password_input == TICKET_MANAGEMENT_PASSWORD:
-                        st.session_state.ticket_management_authenticated = True
-                        st.session_state.current_view = "ticket_management"
-                        st.session_state.pop("tm_password_input", None)
-                        st.rerun()
-                    else:
-                        st.error("The password you entered is incorrect. Please try again.")
+            else:
+                st.text_input("Password", type="password", key="tm_password_input")
+                st.button("Log in", key="tm_unlock_button", on_click=_attempt_ticket_management_login)
+                if st.session_state.pop("tm_login_error", False):
+                    st.error("The password you entered is incorrect. Please try again.")
 
 st.write("Please use this system to request assistance.")
 
@@ -373,17 +399,46 @@ def _render_burgundy_notice(message: str) -> None:
     )
 
 
+# Shared Resolution Status / Past Due (RAG) color coding, applied to any ticket table
+# shown across the app (Ticket Management's editable grid, My Tickets' read-only tables).
+_STATUS_STYLES = {
+    "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
+    "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
+    "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
+}
+_PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
+_PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"], "N/A": _STATUS_STYLES["Resolved"]}
+
+
+def _style_ticket_status_col(col):
+    return col.map(lambda v: _STATUS_STYLES.get(v, ""))
+
+
+def _style_past_due_col(col):
+    return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
+
+
+def _apply_rag_styling(df: pd.DataFrame):
+    """Return a Styler with the Resolution Status / Past Due (RAG) color coding applied,
+    for read-only ticket tables (e.g. My Tickets) — falls back to the plain dataframe when
+    there's no Resolution Status column to color."""
+    if df.empty or "Resolution Status" not in df.columns:
+        return df
+
+    styled_df = df.copy()
+    styled_df[_PAST_DUE_FLAG_COLUMN] = calculate_past_due_labels(styled_df)
+    return styled_df.style.apply(
+        _style_ticket_status_col, subset=["Resolution Status"], axis=0
+    ).apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
+
+
 my_tickets_person = st.session_state.get("my_tickets_person")
 if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>My Tickets — {my_tickets_person}</h2></div>",
         unsafe_allow_html=True,
     )
-    if st.button("← Back to home screen", key="my_tickets_back_button"):
-        st.session_state.current_view = "home"
-        st.session_state.my_tickets_person = None
-        st.session_state.pop("my_tickets_person_selectbox", None)
-        st.rerun()
+    st.button("← Back to home screen", key="my_tickets_back_button", on_click=_go_home_from_my_tickets)
 
     tickets_submitted = st.session_state.df[
         st.session_state.df["Submitted By"].astype(str).str.casefold() == my_tickets_person.casefold()
@@ -399,7 +454,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     if tickets_submitted.empty:
         _render_burgundy_notice("No tickets submitted by this person yet.")
     else:
-        st.dataframe(tickets_submitted, width="stretch", hide_index=True)
+        st.dataframe(_apply_rag_styling(tickets_submitted), width="stretch", hide_index=True)
 
     st.markdown(
         f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets assigned</h3>",
@@ -408,7 +463,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     if tickets_assigned.empty:
         _render_burgundy_notice("No tickets currently assigned to this person.")
     else:
-        st.dataframe(tickets_assigned, width="stretch", hide_index=True)
+        st.dataframe(_apply_rag_styling(tickets_assigned), width="stretch", hide_index=True)
 
     st.markdown(
         f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Ticket attachments</h3>",
@@ -454,9 +509,7 @@ if st.session_state.get("current_view") == "internal_management":
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Performance Management</h1></div>",
         unsafe_allow_html=True,
     )
-    if st.button("← Back to home screen", key="ism_back_button"):
-        st.session_state.current_view = "home"
-        st.rerun()
+    st.button("← Back to home screen", key="ism_back_button", on_click=_go_to_view, args=("home",))
 
     # Combined statistics and performance-trend section for the ticket.
     st.markdown(
@@ -566,9 +619,7 @@ if st.session_state.get("current_view") == "ticket_management":
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Ticket Management</h1></div>",
         unsafe_allow_html=True,
     )
-    if st.button("← Back to home screen", key="tm_back_button"):
-        st.session_state.current_view = "home"
-        st.rerun()
+    st.button("← Back to home screen", key="tm_back_button", on_click=_go_to_view, args=("home",))
 
     # Show section to view and edit existing tickets in a table.
     st.markdown(
@@ -654,21 +705,6 @@ if st.session_state.get("current_view") == "ticket_management":
             st.stop()
         st.success(f"Updated {status_ticket_id} to {new_resolution_status}.")
         st.rerun()
-
-    # Color-coded status styling for the editable tickets table.
-    _STATUS_STYLES = {
-        "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
-        "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
-        "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
-    }
-    _PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
-    _PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"], "N/A": _STATUS_STYLES["Resolved"]}
-
-    def _style_ticket_status_col(col):
-        return col.map(lambda v: _STATUS_STYLES.get(v, ""))
-
-    def _style_past_due_col(col):
-        return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
 
     # Single color-coded, editable table — edits (including Description) save immediately.
     # Resolution Status is edited via the "Update ticket status" control above, since data_editor
