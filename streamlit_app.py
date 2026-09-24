@@ -469,12 +469,88 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     else:
         st.dataframe(_apply_rag_styling(tickets_assigned), width="stretch", hide_index=True)
 
+    my_ticket_ids = sorted(
+        set(tickets_submitted["ID"].astype(str)) | set(tickets_assigned["ID"].astype(str))
+    )
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Manage your tickets</h3>",
+        unsafe_allow_html=True,
+    )
+
+    # Allow the end user to delete one of their own tickets.
+    my_tickets_selected_delete_id = st.selectbox(
+        "Delete a ticket",
+        options=[""] + my_ticket_ids,
+        index=0,
+        key="my_tickets_delete_selectbox",
+    )
+
+    if st.button("Delete selected ticket", type="primary", key="my_tickets_delete_button") and my_tickets_selected_delete_id:
+        try:
+            get_ticket_repository().delete_ticket(my_tickets_selected_delete_id)
+        except Exception as exc:
+            st.error(f"Unable to delete {my_tickets_selected_delete_id} from Supabase: {exc}")
+            st.stop()
+        st.session_state.df = delete_ticket_by_id(st.session_state.df, my_tickets_selected_delete_id)
+        st.session_state.ticket_attachments.pop(my_tickets_selected_delete_id, None)
+        ticket_comment_ids = [
+            c["comment_id"] for c in st.session_state.ticket_comments if c["ticket_id"] == my_tickets_selected_delete_id
+        ]
+        if ticket_comment_ids:
+            try:
+                get_ticket_repository().delete_comments(ticket_comment_ids)
+            except Exception as exc:
+                st.error(_format_supabase_comment_error(f"delete comments for {my_tickets_selected_delete_id} from Supabase", exc))
+                st.stop()
+        st.session_state.ticket_comments = [
+            c for c in st.session_state.ticket_comments if c["ticket_id"] != my_tickets_selected_delete_id
+        ]
+        st.success(f"Deleted {my_tickets_selected_delete_id}.")
+        st.rerun()
+
+    # Allow the end user to change one of their own ticket's resolution status.
+    my_tickets_status_ticket_col, my_tickets_status_value_col, my_tickets_status_button_col = st.columns([2, 1, 1])
+    with my_tickets_status_ticket_col:
+        my_tickets_status_ticket_id = st.selectbox(
+            "Update ticket status",
+            options=[""] + my_ticket_ids,
+            index=0,
+            key="my_tickets_update_status_selectbox",
+        )
+    with my_tickets_status_value_col:
+        my_tickets_new_resolution_status = st.selectbox(
+            "New status",
+            options=["Pending", "In Process", "Resolved"],
+            key="my_tickets_update_status_value_selectbox",
+        )
+    with my_tickets_status_button_col:
+        st.write("")
+        st.write("")
+        my_tickets_apply_status_clicked = st.button(
+            "Apply status", type="primary", key="my_tickets_apply_status_button"
+        )
+
+    if my_tickets_apply_status_clicked and my_tickets_status_ticket_id:
+        ticket_mask = st.session_state.df["ID"].astype(str) == my_tickets_status_ticket_id
+        st.session_state.df.loc[ticket_mask, "Resolution Status"] = my_tickets_new_resolution_status
+        if my_tickets_new_resolution_status.lower() == "resolved":
+            current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
+            if (current_date_closed == "").all():
+                st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
+        else:
+            st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
+        try:
+            get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
+        except Exception as exc:
+            st.error(f"Unable to update {my_tickets_status_ticket_id} in Supabase: {exc}")
+            st.stop()
+        st.success(f"Updated {my_tickets_status_ticket_id} to {my_tickets_new_resolution_status}.")
+        st.rerun()
+
     st.markdown(
         f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Ticket attachments</h3>",
         unsafe_allow_html=True,
-    )
-    my_ticket_ids = sorted(
-        set(tickets_submitted["ID"].astype(str)) | set(tickets_assigned["ID"].astype(str))
     )
     my_tickets_attachment_ticket_id = st.selectbox(
         "Select a ticket to view its attachments",

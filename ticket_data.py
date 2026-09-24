@@ -27,7 +27,7 @@ STAFF_DIRECTORY = (
     "Deno Erickson",
     "George Dixon",
     "Gerald Radcliff",
-    "Tyler Bourgois",
+    "Tyler Bourgeois",
     "Tanner Bourgeois",
     "Tim Norris",
     "Jordan Garza",
