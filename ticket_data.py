@@ -15,6 +15,31 @@ FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-
 TICKET_CODES = ("IT", "CI", "MHE", "Maintenance", "Custodial")
 ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
 
+# Codes not listed here (e.g. "IT") are left unassigned for manual assignment.
+CODE_ASSIGNEE_MAP = {
+    "CI": "Jordan Garza",
+    "MHE": "Tanner Bourgeois",
+    "Maintenance": "Gary Lewis",
+    "Custodial": "Jordan Garza",
+}
+
+STAFF_DIRECTORY = (
+    "Deno Erickson",
+    "George Dixon",
+    "Gerald Radcliff",
+    "Tyler Bourgois",
+    "Tanner Bourgeois",
+    "Tim Norris",
+    "Jordan Garza",
+    "Gary Lewis",
+    "Samuel Meyer",
+    "Michael McDowell",
+    "Levi Lyngvar",
+    "Madyson Satariano",
+    "Kevin Guthrie",
+    "Eleanor Bragg",
+)
+
 
 def _get_resolution_status_column(df: pd.DataFrame) -> str | None:
     """Return the supported resolution status column name for a dataframe."""

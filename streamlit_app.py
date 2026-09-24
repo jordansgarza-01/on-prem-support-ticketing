@@ -35,6 +35,7 @@ try:
         calculate_urgent_open_ticket_count,
         calculate_open_ticket_count,
         calculate_resolution_rate,
+        CODE_ASSIGNEE_MAP,
         create_initial_ticket_dataframe,
         delete_ticket_by_id,
         filter_tickets_by_assignee,
@@ -43,6 +44,7 @@ try:
         get_distinct_assignees,
         get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
+        STAFF_DIRECTORY,
         TICKET_CODES,
     )
 except ImportError:
@@ -75,6 +77,7 @@ except ImportError:
     )
     calculate_open_ticket_count = ticket_data_module.calculate_open_ticket_count
     calculate_resolution_rate = ticket_data_module.calculate_resolution_rate
+    CODE_ASSIGNEE_MAP = ticket_data_module.CODE_ASSIGNEE_MAP
     create_initial_ticket_dataframe = ticket_data_module.create_initial_ticket_dataframe
     delete_ticket_by_id = ticket_data_module.delete_ticket_by_id
     filter_tickets_by_assignee = ticket_data_module.filter_tickets_by_assignee
@@ -82,6 +85,7 @@ except ImportError:
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
     get_distinct_assignees = ticket_data_module.get_distinct_assignees
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
+    STAFF_DIRECTORY = ticket_data_module.STAFF_DIRECTORY
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
 from ticket_repository import SupabaseTicketRepository, validate_supabase_url
@@ -162,10 +166,28 @@ if not st.session_state.get("authenticated", False):
             st.error("The password you entered is incorrect. Please try again.")
     st.stop()
 
-st.markdown(
-    f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
-    unsafe_allow_html=True,
-)
+header_title_col, header_portal_col = st.columns([5, 1])
+with header_title_col:
+    st.markdown(
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
+        unsafe_allow_html=True,
+    )
+with header_portal_col:
+    st.write("")
+    if st.button("🎫 My Tickets", key="my_tickets_icon_button", use_container_width=True):
+        st.session_state.show_my_tickets_prompt = not st.session_state.get(
+            "show_my_tickets_prompt", False
+        )
+
+if st.session_state.get("show_my_tickets_prompt", False) and not st.session_state.get("my_tickets_person"):
+    selected_my_tickets_person = st.selectbox(
+        "Select your name to view My Tickets",
+        ["-- Select your name --", *STAFF_DIRECTORY],
+        key="my_tickets_person_selectbox",
+    )
+    if selected_my_tickets_person != "-- Select your name --":
+        st.session_state.my_tickets_person = selected_my_tickets_person
+        st.rerun()
 
 st.write(
     """
@@ -226,6 +248,44 @@ if "Resolution Status" not in st.session_state.df.columns and "Ticket Status" in
 
 if "ticket_attachments" not in st.session_state:
     st.session_state.ticket_attachments = {}
+
+my_tickets_person = st.session_state.get("my_tickets_person")
+if my_tickets_person:
+    st.markdown(
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>My Tickets — {my_tickets_person}</h2></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("← Back to dashboard", key="my_tickets_back_button"):
+        st.session_state.show_my_tickets_prompt = False
+        st.session_state.my_tickets_person = None
+        st.rerun()
+
+    tickets_submitted = st.session_state.df[
+        st.session_state.df["Submitted By"].astype(str).str.casefold() == my_tickets_person.casefold()
+    ]
+    tickets_assigned = st.session_state.df[
+        st.session_state.df["Assigned To"].astype(str).str.casefold() == my_tickets_person.casefold()
+    ]
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Submitted</h3>",
+        unsafe_allow_html=True,
+    )
+    if tickets_submitted.empty:
+        st.info("No tickets submitted by this person yet.")
+    else:
+        st.dataframe(tickets_submitted, width="stretch", hide_index=True)
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Assigned</h3>",
+        unsafe_allow_html=True,
+    )
+    if tickets_assigned.empty:
+        st.info("No tickets currently assigned to this person.")
+    else:
+        st.dataframe(tickets_assigned, width="stretch", hide_index=True)
+
+    st.stop()
 
 
 def _format_supabase_comment_error(action: str, exc: Exception) -> str:
@@ -874,7 +934,7 @@ if submitted:
                 "Due Date": calculate_due_date(submitted_at),
                 "Date Closed": "",
                 "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
-                "Assigned To": "",
+                "Assigned To": CODE_ASSIGNEE_MAP.get(code, ""),
                 "Notes": "",
                 "Resolution Status": "Pending",
             }
