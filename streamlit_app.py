@@ -197,7 +197,7 @@ st.markdown(
     header_ism_col,
     header_ticket_mgmt_col,
     header_spacer_right,
-) = st.columns([1.1, 2.1, 1.7, 5.1])
+) = st.columns([1.6, 2.7, 2.2, 1.3])
 
 with header_my_tickets_col:
     with st.container(key="my_tickets_portal"):
