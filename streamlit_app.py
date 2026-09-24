@@ -150,7 +150,7 @@ if not st.runtime.exists():
     st.session_state.setdefault("_headless_runtime", True)
 
 APP_PASSWORD = "Platinum2025"
-INTERNAL_MANAGEMENT_PASSWORD = "ULSDfuelHC01@$$"
+INTERNAL_MANAGEMENT_PASSWORD = "ServiceStats01@!"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
@@ -183,6 +183,7 @@ st.markdown(
         background-color: {DEEP_BURGUNDY} !important;
         color: #ffffff !important;
         border: 1px solid {DEEP_BURGUNDY} !important;
+        white-space: nowrap !important;
     }}
     </style>
     """,
@@ -207,16 +208,16 @@ with header_my_tickets_col:
 with header_ism_col:
     st.write("")
     with st.container(key="internal_management_portal"):
-        with st.popover("Internal Service Management", use_container_width=True):
+        with st.popover("Performance Management", use_container_width=True):
             if st.session_state.get("internal_management_authenticated", False):
-                if st.button("Open Internal Service Management", key="ism_open_button"):
+                if st.button("Open Performance Management", key="ism_open_button"):
                     st.session_state.current_view = "internal_management"
                     st.rerun()
             else:
                 ism_password_input = st.text_input(
                     "Password", type="password", key="ism_password_input"
                 )
-                if st.button("Unlock", key="ism_unlock_button"):
+                if st.button("Log in", key="ism_unlock_button"):
                     if ism_password_input == INTERNAL_MANAGEMENT_PASSWORD:
                         st.session_state.internal_management_authenticated = True
                         st.session_state.current_view = "internal_management"
@@ -428,7 +429,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
 
 if st.session_state.get("current_view") == "internal_management":
     st.markdown(
-        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>Internal Service Management</h2></div>",
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>Performance Management</h2></div>",
         unsafe_allow_html=True,
     )
     if st.button("← Back to home screen", key="ism_back_button"):

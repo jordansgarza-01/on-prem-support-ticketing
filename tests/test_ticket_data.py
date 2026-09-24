@@ -11,6 +11,7 @@ from ticket_data import (
     calculate_average_closed_tickets_per_week,
     calculate_average_open_tickets_per_week,
     calculate_due_date,
+    calculate_resolution_time_trend,
     calculate_stale_open_ticket_flags,
     calculate_urgent_open_ticket_count,
     calculate_open_ticket_count,
@@ -527,6 +528,32 @@ def test_calculate_due_date_skips_weekends():
     due_date = calculate_due_date("2026-08-07 09:00:00 ET", days=7)
 
     assert due_date == "2026-08-18 09:00:00 ET"
+
+
+def test_calculate_resolution_time_trend_excludes_weekends():
+    # A Friday closure (10h) followed by the next Friday's closure (96h): the
+    # weekend days in between must never be reindexed/interpolated as their own
+    # data points, so the moving average should only ever reflect business days.
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-3001",
+                "Date Submitted": "2026-08-06 23:00:00 ET",
+                "Date Closed": "2026-08-07 09:00:00 ET",
+                "Resolution Status": "Resolved",
+            },
+            {
+                "ID": "TICKET-3002",
+                "Date Submitted": "2026-08-10 09:00:00 ET",
+                "Date Closed": "2026-08-14 09:00:00 ET",
+                "Resolution Status": "Resolved",
+            },
+        ]
+    )
+
+    trend_df = calculate_resolution_time_trend(df)
+
+    assert trend_df["moving_average"].tolist() == [10.0, 61.6]
 
 
 def test_calculate_stale_open_ticket_flags_counts_only_business_days(monkeypatch):

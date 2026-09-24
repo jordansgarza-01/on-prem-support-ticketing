@@ -312,9 +312,11 @@ def calculate_resolution_time_trend(df: pd.DataFrame) -> pd.DataFrame:
     if daily_series.empty:
         return pd.DataFrame(columns=empty_columns)
 
-    full_index = pd.date_range(daily_series.index.min(), daily_series.index.max(), freq="D")
-    daily_series = daily_series.reindex(full_index).interpolate(limit_direction="both")
-    moving_average = daily_series.rolling(window=7, min_periods=1).mean()
+    # Business days only (Mon-Fri) — weekends are never reindexed/interpolated in, so
+    # they can never contribute (or count against the employee) in the moving average.
+    business_day_index = pd.bdate_range(daily_series.index.min(), daily_series.index.max())
+    daily_series = daily_series.reindex(business_day_index).interpolate(limit_direction="both")
+    moving_average = daily_series.rolling(window="7D", min_periods=1).mean()
 
     weekly_moving_average = moving_average.resample("W").last().dropna()
     return pd.DataFrame(
