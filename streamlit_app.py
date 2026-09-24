@@ -150,6 +150,7 @@ if not st.runtime.exists():
     st.session_state.setdefault("_headless_runtime", True)
 
 APP_PASSWORD = "Platinum2025"
+INTERNAL_MANAGEMENT_PASSWORD = "ULSDfuelHC01@$$"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
@@ -166,26 +167,30 @@ if not st.session_state.get("authenticated", False):
             st.error("The password you entered is incorrect. Please try again.")
     st.stop()
 
-header_title_col, header_portal_col = st.columns([5, 1])
+st.session_state.setdefault("current_view", "home")
+
+header_title_col, header_my_tickets_col, header_ism_col = st.columns([4, 1, 1.4])
 with header_title_col:
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
         unsafe_allow_html=True,
     )
-with header_portal_col:
+
+st.markdown(
+    f"""
+    <style>
+    .st-key-my_tickets_portal button, .st-key-internal_management_portal button {{
+        background-color: {DEEP_BURGUNDY} !important;
+        color: #ffffff !important;
+        border: 1px solid {DEEP_BURGUNDY} !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+with header_my_tickets_col:
     st.write("")
-    st.markdown(
-        f"""
-        <style>
-        .st-key-my_tickets_portal button {{
-            background-color: {DEEP_BURGUNDY} !important;
-            color: #ffffff !important;
-            border: 1px solid {DEEP_BURGUNDY} !important;
-        }}
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
     with st.container(key="my_tickets_portal"):
         with st.popover("My Tickets", use_container_width=True):
             selected_my_tickets_person = st.selectbox(
@@ -195,8 +200,30 @@ with header_portal_col:
             )
             if selected_my_tickets_person != "-- Select your name --":
                 st.session_state.my_tickets_person = selected_my_tickets_person
+                st.session_state.current_view = "my_tickets"
                 del st.session_state["my_tickets_person_selectbox"]
                 st.rerun()
+
+with header_ism_col:
+    st.write("")
+    with st.container(key="internal_management_portal"):
+        with st.popover("Internal Service Management", use_container_width=True):
+            if st.session_state.get("internal_management_authenticated", False):
+                if st.button("Open Internal Service Management", key="ism_open_button"):
+                    st.session_state.current_view = "internal_management"
+                    st.rerun()
+            else:
+                ism_password_input = st.text_input(
+                    "Password", type="password", key="ism_password_input"
+                )
+                if st.button("Unlock", key="ism_unlock_button"):
+                    if ism_password_input == INTERNAL_MANAGEMENT_PASSWORD:
+                        st.session_state.internal_management_authenticated = True
+                        st.session_state.current_view = "internal_management"
+                        st.session_state.pop("ism_password_input", None)
+                        st.rerun()
+                    else:
+                        st.error("The password you entered is incorrect. Please try again.")
 
 st.write(
     """
@@ -258,44 +285,6 @@ if "Resolution Status" not in st.session_state.df.columns and "Ticket Status" in
 if "ticket_attachments" not in st.session_state:
     st.session_state.ticket_attachments = {}
 
-my_tickets_person = st.session_state.get("my_tickets_person")
-if my_tickets_person:
-    st.markdown(
-        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>My Tickets — {my_tickets_person}</h2></div>",
-        unsafe_allow_html=True,
-    )
-    if st.button("← Back to dashboard", key="my_tickets_back_button"):
-        st.session_state.my_tickets_person = None
-        st.session_state.pop("my_tickets_person_selectbox", None)
-        st.rerun()
-
-    tickets_submitted = st.session_state.df[
-        st.session_state.df["Submitted By"].astype(str).str.casefold() == my_tickets_person.casefold()
-    ]
-    tickets_assigned = st.session_state.df[
-        st.session_state.df["Assigned To"].astype(str).str.casefold() == my_tickets_person.casefold()
-    ]
-
-    st.markdown(
-        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Submitted</h3>",
-        unsafe_allow_html=True,
-    )
-    if tickets_submitted.empty:
-        st.info("No tickets submitted by this person yet.")
-    else:
-        st.dataframe(tickets_submitted, width="stretch", hide_index=True)
-
-    st.markdown(
-        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Assigned</h3>",
-        unsafe_allow_html=True,
-    )
-    if tickets_assigned.empty:
-        st.info("No tickets currently assigned to this person.")
-    else:
-        st.dataframe(tickets_assigned, width="stretch", hide_index=True)
-
-    st.stop()
-
 
 def _format_supabase_comment_error(action: str, exc: Exception) -> str:
     """Return an actionable message when comments fail because the ticket_comments
@@ -348,6 +337,456 @@ def _to_displayable_image(data: bytes, mime: str) -> tuple[bytes, str]:
 
 def format_stat_value(value: float | int) -> str:
     return f"{float(value):.2f}"
+
+
+def _render_burgundy_notice(message: str) -> None:
+    """Render a deep-burgundy notice banner matching the app's styling (in place of st.info's default blue)."""
+    st.markdown(
+        f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
+        "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
+        f"{message}"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+
+my_tickets_person = st.session_state.get("my_tickets_person")
+if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
+    st.markdown(
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>My Tickets — {my_tickets_person}</h2></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("← Back to home screen", key="my_tickets_back_button"):
+        st.session_state.current_view = "home"
+        st.session_state.my_tickets_person = None
+        st.session_state.pop("my_tickets_person_selectbox", None)
+        st.rerun()
+
+    tickets_submitted = st.session_state.df[
+        st.session_state.df["Submitted By"].astype(str).str.casefold() == my_tickets_person.casefold()
+    ]
+    tickets_assigned = st.session_state.df[
+        st.session_state.df["Assigned To"].astype(str).str.casefold() == my_tickets_person.casefold()
+    ]
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Submitted</h3>",
+        unsafe_allow_html=True,
+    )
+    if tickets_submitted.empty:
+        _render_burgundy_notice("No tickets submitted by this person yet.")
+    else:
+        st.dataframe(tickets_submitted, width="stretch", hide_index=True)
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Assigned</h3>",
+        unsafe_allow_html=True,
+    )
+    if tickets_assigned.empty:
+        _render_burgundy_notice("No tickets currently assigned to this person.")
+    else:
+        st.dataframe(tickets_assigned, width="stretch", hide_index=True)
+
+    st.markdown(
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Ticket attachments</h3>",
+        unsafe_allow_html=True,
+    )
+    my_ticket_ids = sorted(
+        set(tickets_submitted["ID"].astype(str)) | set(tickets_assigned["ID"].astype(str))
+    )
+    my_tickets_attachment_ticket_id = st.selectbox(
+        "Select a ticket to view its attachments",
+        options=[""] + my_ticket_ids,
+        index=0,
+        key="my_tickets_attachment_selectbox",
+    )
+    if my_tickets_attachment_ticket_id:
+        my_ticket_attachments = st.session_state.ticket_attachments.get(
+            my_tickets_attachment_ticket_id, []
+        )
+        if my_ticket_attachments:
+            st.write(f"{len(my_ticket_attachments)} attachment(s) for **{my_tickets_attachment_ticket_id}**:")
+            for attachment in my_ticket_attachments:
+                display_data, display_mime = _to_displayable_image(attachment["data"], attachment["mime"])
+                if display_mime in ("image/jpeg", "image/png", "image/gif", "image/webp"):
+                    st.image(display_data, caption=attachment["name"])
+                else:
+                    # Browser cannot render this format; offer a download instead.
+                    st.download_button(
+                        label=f"Download {attachment['name']}",
+                        data=attachment["data"],
+                        file_name=attachment["name"],
+                        mime=attachment["mime"],
+                        type="primary",
+                    )
+        else:
+            _render_burgundy_notice(f"No attachments for {my_tickets_attachment_ticket_id}.")
+    else:
+        _render_burgundy_notice("Select one of your tickets above to view its attachments.")
+
+    st.stop()
+
+if st.session_state.get("current_view") == "internal_management":
+    st.markdown(
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>Internal Service Management</h2></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("← Back to home screen", key="ism_back_button"):
+        st.session_state.current_view = "home"
+        st.rerun()
+
+    # Show section to view and edit existing tickets in a table.
+    st.markdown(
+        f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Existing tickets</h2></div>",
+        unsafe_allow_html=True,
+    )
+
+    filter_col, search_col = st.columns([1, 2])
+    with filter_col:
+        selected_code = st.selectbox("Filter by code", options=["All", *TICKET_CODES])
+    with search_col:
+        selected_table_assignee = st.selectbox(
+            "Filter by assignee", options=["All", *ASSIGNEES], key="table_assignee_filter"
+        )
+    filtered_df = filter_tickets_by_assignee(st.session_state.df, selected_table_assignee)
+    filtered_df = filter_tickets_by_code(filtered_df, selected_code)
+
+    # Allow the user to delete a ticket by selecting its ID.
+    selected_ticket_id = st.selectbox(
+        "Delete a ticket",
+        options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
+        index=0,
+        key="delete_ticket_selectbox",
+    )
+
+    if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
+        try:
+            get_ticket_repository().delete_ticket(selected_ticket_id)
+        except Exception as exc:
+            st.error(f"Unable to delete {selected_ticket_id} from Supabase: {exc}")
+            st.stop()
+        st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
+        st.session_state.ticket_attachments.pop(selected_ticket_id, None)
+        ticket_comment_ids = [
+            c["comment_id"] for c in st.session_state.ticket_comments if c["ticket_id"] == selected_ticket_id
+        ]
+        if ticket_comment_ids:
+            try:
+                get_ticket_repository().delete_comments(ticket_comment_ids)
+            except Exception as exc:
+                st.error(_format_supabase_comment_error(f"delete comments for {selected_ticket_id} from Supabase", exc))
+                st.stop()
+        st.session_state.ticket_comments = [
+            c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
+        ]
+        st.success(f"Deleted {selected_ticket_id}.")
+        st.rerun()
+
+    # Allow the user to change a ticket's resolution status (kept out of the grid below so the
+    # Resolution Status column can stay non-editable there and show its true legend colors).
+    status_ticket_col, status_value_col, status_button_col = st.columns([2, 1, 1])
+    with status_ticket_col:
+        status_ticket_id = st.selectbox(
+            "Update ticket status",
+            options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
+            index=0,
+            key="update_status_selectbox",
+        )
+    with status_value_col:
+        new_resolution_status = st.selectbox(
+            "New status",
+            options=["Pending", "In Process", "Resolved"],
+            key="update_status_value_selectbox",
+        )
+    with status_button_col:
+        st.write("")
+        st.write("")
+        apply_status_clicked = st.button("Apply status", type="primary")
+
+    if apply_status_clicked and status_ticket_id:
+        ticket_mask = st.session_state.df["ID"].astype(str) == status_ticket_id
+        st.session_state.df.loc[ticket_mask, "Resolution Status"] = new_resolution_status
+        if new_resolution_status.lower() == "resolved":
+            current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
+            if (current_date_closed == "").all():
+                st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
+        else:
+            st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
+        try:
+            get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
+        except Exception as exc:
+            st.error(f"Unable to update {status_ticket_id} in Supabase: {exc}")
+            st.stop()
+        st.success(f"Updated {status_ticket_id} to {new_resolution_status}.")
+        st.rerun()
+
+    # Color-coded status styling for the editable tickets table.
+    _STATUS_STYLES = {
+        "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
+        "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
+        "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
+    }
+    _PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
+    _PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"], "N/A": _STATUS_STYLES["Resolved"]}
+
+    def _style_ticket_status_col(col):
+        return col.map(lambda v: _STATUS_STYLES.get(v, ""))
+
+    def _style_past_due_col(col):
+        return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
+
+    # Single color-coded, editable table — edits (including Description) save immediately.
+    # Resolution Status is edited via the "Update ticket status" control above, since data_editor
+    # only applies Styler colors (matching the legend) to non-editable columns.
+    editor_df = filtered_df.copy()
+    if "Date Closed" in editor_df.columns:
+        editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
+
+    table_search_term = st.text_input(
+        "Search existing tickets",
+        placeholder="Enter full or partial ticket number, e.g. the last 3-4 characters",
+        key="table_search_input",
+    )
+    editor_df = filter_tickets_by_id(editor_df, table_search_term)
+
+    editor_df[_PAST_DUE_FLAG_COLUMN] = (
+        calculate_past_due_labels(editor_df) if not editor_df.empty else ""
+    )
+
+    if not editor_df.empty and "Resolution Status" in editor_df.columns:
+        st.markdown(
+            "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
+            "Resolution Status legend: "
+            "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Pending</span>"
+            "<span style='background:#fff3cd;color:#856404;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>In Process</span>"
+            "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>Resolved</span>"
+            "</span></div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<div style='margin: 0.25rem 0 0.5rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>"
+            "Past Due legend: "
+            "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Flagged</span>"
+            "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>N/A</span>"
+            "</span></div>",
+            unsafe_allow_html=True,
+        )
+        editor_source = (
+            editor_df.style.apply(
+                _style_ticket_status_col, subset=["Resolution Status"], axis=0
+            )
+            .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
+            .set_properties(
+                subset=["Issue"],
+                **{
+                    "white-space": "pre-wrap",
+                    "overflow-wrap": "anywhere",
+                    "overflow-y": "auto",
+                    "max-height": "180px",
+                    "display": "block",
+                },
+            )
+            .set_properties(
+                subset=["Notes"],
+                **{
+                    "white-space": "pre-wrap",
+                    "overflow-wrap": "anywhere",
+                    "overflow-y": "auto",
+                    "max-height": "180px",
+                    "display": "block",
+                },
+            )
+        )
+    else:
+        editor_source = editor_df
+
+    edited_df = st.data_editor(
+        editor_source,
+        width="stretch",
+        height=500,
+        hide_index=True,
+        row_height=216,
+        column_config={
+            "Issue": st.column_config.TextColumn(
+                "Description",
+                help="Ticket description",
+                width="large",
+            ),
+            "Code": st.column_config.SelectboxColumn(
+                "Code",
+                help="Support work category",
+                options=TICKET_CODES,
+                required=True,
+            ),
+            "Priority": st.column_config.SelectboxColumn(
+                "Priority",
+                help="Priority",
+                options=["Urgent", "High", "Medium", "Low"],
+                required=True,
+            ),
+            "Assigned To": st.column_config.TextColumn(
+                "Assigned To",
+                help="Person assigned to this ticket",
+            ),
+            "Notes": st.column_config.TextColumn(
+                "Notes",
+                help="Internal notes for this ticket",
+                width="large",
+            ),
+            "Resolution Status": st.column_config.TextColumn(
+                "Resolution Status",
+                help="Current resolution status — change it above with 'Update ticket status'",
+            ),
+            "Due Date": st.column_config.TextColumn(
+                "Due Date",
+                help="Target resolution date used for SLA metrics",
+            ),
+            "Date Closed": st.column_config.TextColumn(
+                "Date Closed",
+                default="",
+            ),
+            _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
+                _PAST_DUE_FLAG_COLUMN,
+                help="Flags tickets still Pending or In Process one full week after submission; "
+                "shows N/A for tickets closed within 7 days",
+            ),
+        },
+        # Disable editing the ID, Date Submitted, Date Closed, Resolution Status, and past-due flag columns.
+        disabled=["ID", "Date Submitted", "Date Closed", "Resolution Status", _PAST_DUE_FLAG_COLUMN],
+    )
+    # The past-due flag is computed for display only and isn't part of the persisted ticket schema.
+    edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN])
+    if "Date Closed" in edited_df.columns:
+        edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
+
+    # Auto-stamp Date Closed the moment a ticket is set to Closed.
+    needs_close_stamp = (
+        (edited_df["Resolution Status"].astype(str).str.lower() == "resolved")
+        & (edited_df["Date Closed"].astype(str).str.strip() == "")
+    )
+    if needs_close_stamp.any():
+        edited_df.loc[needs_close_stamp, "Date Closed"] = get_eastern_us_timestamp()
+
+    unedited_df = st.session_state.df[
+        ~st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
+    ]
+    previously_edited_df = st.session_state.df[
+        st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
+    ].set_index("ID")
+    for _, ticket in edited_df.iterrows():
+        previous_ticket = previously_edited_df.loc[ticket["ID"]]
+        if not ticket.equals(previous_ticket):
+            try:
+                get_ticket_repository().update_ticket(ticket.to_dict())
+            except Exception as exc:
+                st.error(f"Unable to update {ticket['ID']} in Supabase: {exc}")
+                st.stop()
+    st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
+
+    # Combined statistics and performance-trend section for the ticket.
+    st.markdown(
+        f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance trend</h2></div>",
+        unsafe_allow_html=True,
+    )
+
+    def render_ticket_metrics_row(tickets_df: pd.DataFrame) -> None:
+        """Render the six standard KPI metrics for a set of tickets in a compact row."""
+        metric_cols = st.columns(6)
+        metric_cols[0].metric("Open", format_stat_value(calculate_open_ticket_count(tickets_df)))
+        metric_cols[1].metric("Urgent", format_stat_value(calculate_urgent_open_ticket_count(tickets_df)))
+        metric_cols[2].metric("Resolution %", f"{format_stat_value(calculate_resolution_rate(tickets_df))}%")
+        metric_cols[3].metric("Avg hours", format_stat_value(calculate_average_resolution_time_hours(tickets_df)))
+        metric_cols[4].metric("Overdue", format_stat_value(calculate_overdue_ticket_count(tickets_df)))
+        metric_cols[5].metric("On-time %", f"{format_stat_value(calculate_on_time_close_rate(tickets_df))}%")
+
+    all_distinct_assignees = get_distinct_assignees(st.session_state.df)
+    assignee_filter_options = ["All"] + list(ASSIGNEES)
+    for extra_assignee in all_distinct_assignees:
+        if extra_assignee not in assignee_filter_options:
+            assignee_filter_options.append(extra_assignee)
+
+    selected_stats_assignee = st.selectbox(
+        "Filter by assigned to",
+        options=assignee_filter_options,
+        key="stats_assignee_filter",
+    )
+
+    snapshot_file_name = (
+        f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
+        if selected_stats_assignee != "All"
+        else "assignee_snapshot.pdf"
+    )
+    st.download_button(
+        "Print assignee snapshot",
+        data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
+        file_name=snapshot_file_name,
+        mime="application/pdf",
+        type="primary",
+        disabled=selected_stats_assignee == "All",
+        help="Select a specific person under Filter by assigned to enable this.",
+    )
+
+    # No statistical or performance-trend output is shown until a specific person is
+    # selected — aggregated (all-assignee) output would duplicate per-assignee breakdowns.
+    if selected_stats_assignee == "All":
+        _render_burgundy_notice(
+            "Select a specific person under \"Filter by assigned to\" so as to see their individual statistics, and performance trend."
+        )
+    else:
+        for code_name in TICKET_CODES:
+            code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
+
+            st.markdown(
+                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
+                unsafe_allow_html=True,
+            )
+
+            code_assignees = get_distinct_assignees(code_tickets)
+            assignees_for_code = (
+                [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
+            )
+
+            if not assignees_for_code:
+                st.caption(f"No assigned tickets for {code_name} yet.")
+            for person in assignees_for_code:
+                st.markdown(
+                    f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
+                    unsafe_allow_html=True,
+                )
+                render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
+
+        trend_tickets = filter_tickets_by_assignee(st.session_state.df, selected_stats_assignee)
+        trend_df = calculate_resolution_time_trend(trend_tickets)
+        plot_df = trend_df.dropna(subset=["moving_average"])
+
+        if plot_df.empty:
+            _render_burgundy_notice(f"No average resolution time data yet for {selected_stats_assignee}.")
+        else:
+            plot_df = plot_df.copy()
+            plot_df["series"] = "7-Day Moving Average"
+            axis_style = {
+                "gridColor": "#D9D9D9",
+                "domainColor": "black",
+                "tickColor": "black",
+                "labelColor": "black",
+                "titleColor": "black",
+            }
+            trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
+                x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
+                y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
+                color=alt.Color(
+                    "series:N",
+                    scale=alt.Scale(domain=["7-Day Moving Average"], range=[DEEP_BURGUNDY]),
+                    legend=alt.Legend(title="Legend", labelColor="black", titleColor="black"),
+                ),
+            ).properties(
+                height=340, title=f"{selected_stats_assignee} — Average Resolution Time (Hours)"
+            )
+            st.altair_chart(trend_chart, width="stretch")
+
+    st.stop()
+
+
 
 
 
@@ -965,403 +1404,6 @@ if submitted:
         st.error(f"Unable to save {new_ticket_id} to Supabase: {exc}")
         st.stop()
     st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0, ignore_index=True)
-
-# Show section to view and edit existing tickets in a table.
-st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Existing tickets</h2></div>",
-    unsafe_allow_html=True,
-)
-
-filter_col, search_col = st.columns([1, 2])
-with filter_col:
-    selected_code = st.selectbox("Filter by code", options=["All", *TICKET_CODES])
-with search_col:
-    selected_table_assignee = st.selectbox(
-        "Filter by assignee", options=["All", *ASSIGNEES], key="table_assignee_filter"
-    )
-filtered_df = filter_tickets_by_assignee(st.session_state.df, selected_table_assignee)
-filtered_df = filter_tickets_by_code(filtered_df, selected_code)
-
-# Allow the user to delete a ticket by selecting its ID.
-selected_ticket_id = st.selectbox(
-    "Delete a ticket",
-    options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
-    index=0,
-    key="delete_ticket_selectbox",
-)
-
-if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
-    try:
-        get_ticket_repository().delete_ticket(selected_ticket_id)
-    except Exception as exc:
-        st.error(f"Unable to delete {selected_ticket_id} from Supabase: {exc}")
-        st.stop()
-    st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
-    st.session_state.ticket_attachments.pop(selected_ticket_id, None)
-    ticket_comment_ids = [
-        c["comment_id"] for c in st.session_state.ticket_comments if c["ticket_id"] == selected_ticket_id
-    ]
-    if ticket_comment_ids:
-        try:
-            get_ticket_repository().delete_comments(ticket_comment_ids)
-        except Exception as exc:
-            st.error(_format_supabase_comment_error(f"delete comments for {selected_ticket_id} from Supabase", exc))
-            st.stop()
-    st.session_state.ticket_comments = [
-        c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
-    ]
-    st.success(f"Deleted {selected_ticket_id}.")
-    st.rerun()
-
-# Allow the user to change a ticket's resolution status (kept out of the grid below so the
-# Resolution Status column can stay non-editable there and show its true legend colors).
-status_ticket_col, status_value_col, status_button_col = st.columns([2, 1, 1])
-with status_ticket_col:
-    status_ticket_id = st.selectbox(
-        "Update ticket status",
-        options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
-        index=0,
-        key="update_status_selectbox",
-    )
-with status_value_col:
-    new_resolution_status = st.selectbox(
-        "New status",
-        options=["Pending", "In Process", "Resolved"],
-        key="update_status_value_selectbox",
-    )
-with status_button_col:
-    st.write("")
-    st.write("")
-    apply_status_clicked = st.button("Apply status", type="primary")
-
-if apply_status_clicked and status_ticket_id:
-    ticket_mask = st.session_state.df["ID"].astype(str) == status_ticket_id
-    st.session_state.df.loc[ticket_mask, "Resolution Status"] = new_resolution_status
-    if new_resolution_status.lower() == "resolved":
-        current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
-        if (current_date_closed == "").all():
-            st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
-    else:
-        st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
-    try:
-        get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
-    except Exception as exc:
-        st.error(f"Unable to update {status_ticket_id} in Supabase: {exc}")
-        st.stop()
-    st.success(f"Updated {status_ticket_id} to {new_resolution_status}.")
-    st.rerun()
-
-# Color-coded status styling for the editable tickets table.
-_STATUS_STYLES = {
-    "Pending": "background-color: #ffe0e0; color: #c00000; font-weight: 600;",
-    "In Process": "background-color: #fff3cd; color: #856404; font-weight: 600;",
-    "Resolved": "background-color: #d4edda; color: #155724; font-weight: 600;",
-}
-_PAST_DUE_FLAG_COLUMN = "Past Due (7+ Days)"
-_PAST_DUE_STYLES = {"Flagged": _STATUS_STYLES["Pending"], "N/A": _STATUS_STYLES["Resolved"]}
-
-def _style_ticket_status_col(col):
-    return col.map(lambda v: _STATUS_STYLES.get(v, ""))
-
-def _style_past_due_col(col):
-    return col.map(lambda v: _PAST_DUE_STYLES.get(v, ""))
-
-# Single color-coded, editable table — edits (including Description) save immediately.
-# Resolution Status is edited via the "Update ticket status" control above, since data_editor
-# only applies Styler colors (matching the legend) to non-editable columns.
-editor_df = filtered_df.copy()
-if "Date Closed" in editor_df.columns:
-    editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
-
-table_search_term = st.text_input(
-    "Search existing tickets",
-    placeholder="Enter full or partial ticket number, e.g. the last 3-4 characters",
-    key="table_search_input",
-)
-editor_df = filter_tickets_by_id(editor_df, table_search_term)
-
-editor_df[_PAST_DUE_FLAG_COLUMN] = (
-    calculate_past_due_labels(editor_df) if not editor_df.empty else ""
-)
-
-if not editor_df.empty and "Resolution Status" in editor_df.columns:
-    st.markdown(
-        "<div style='margin: 0.75rem 0 0.25rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>" 
-        "Resolution Status legend: "
-        "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Pending</span>"
-        "<span style='background:#fff3cd;color:#856404;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>In Process</span>"
-        "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>Resolved</span>"
-        "</span></div>",
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<div style='margin: 0.25rem 0 0.5rem 0;'><span style='font-family: Helvetica, Arial, sans-serif; font-size: 0.88rem; color: #555;'>"
-        "Past Due legend: "
-        "<span style='background:#ffe0e0;color:#c00000;font-weight:600;padding:1px 7px;border-radius:4px;margin-right:6px;'>Flagged</span>"
-        "<span style='background:#d4edda;color:#155724;font-weight:600;padding:1px 7px;border-radius:4px;'>N/A</span>"
-        "</span></div>",
-        unsafe_allow_html=True,
-    )
-    editor_source = (
-        editor_df.style.apply(
-            _style_ticket_status_col, subset=["Resolution Status"], axis=0
-        )
-        .apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
-        .set_properties(
-            subset=["Issue"],
-            **{
-                "white-space": "pre-wrap",
-                "overflow-wrap": "anywhere",
-                "overflow-y": "auto",
-                "max-height": "180px",
-                "display": "block",
-            },
-        )
-        .set_properties(
-            subset=["Notes"],
-            **{
-                "white-space": "pre-wrap",
-                "overflow-wrap": "anywhere",
-                "overflow-y": "auto",
-                "max-height": "180px",
-                "display": "block",
-            },
-        )
-    )
-else:
-    editor_source = editor_df
-
-edited_df = st.data_editor(
-    editor_source,
-    width="stretch",
-    height=500,
-    hide_index=True,
-    row_height=216,
-    column_config={
-        "Issue": st.column_config.TextColumn(
-            "Description",
-            help="Ticket description",
-            width="large",
-        ),
-        "Code": st.column_config.SelectboxColumn(
-            "Code",
-            help="Support work category",
-            options=TICKET_CODES,
-            required=True,
-        ),
-        "Priority": st.column_config.SelectboxColumn(
-            "Priority",
-            help="Priority",
-            options=["Urgent", "High", "Medium", "Low"],
-            required=True,
-        ),
-        "Assigned To": st.column_config.TextColumn(
-            "Assigned To",
-            help="Person assigned to this ticket",
-        ),
-        "Notes": st.column_config.TextColumn(
-            "Notes",
-            help="Internal notes for this ticket",
-            width="large",
-        ),
-        "Resolution Status": st.column_config.TextColumn(
-            "Resolution Status",
-            help="Current resolution status — change it above with 'Update ticket status'",
-        ),
-        "Due Date": st.column_config.TextColumn(
-            "Due Date",
-            help="Target resolution date used for SLA metrics",
-        ),
-        "Date Closed": st.column_config.TextColumn(
-            "Date Closed",
-            default="",
-        ),
-        _PAST_DUE_FLAG_COLUMN: st.column_config.TextColumn(
-            _PAST_DUE_FLAG_COLUMN,
-            help="Flags tickets still Pending or In Process one full week after submission; "
-            "shows N/A for tickets closed within 7 days",
-        ),
-    },
-    # Disable editing the ID, Date Submitted, Date Closed, Resolution Status, and past-due flag columns.
-    disabled=["ID", "Date Submitted", "Date Closed", "Resolution Status", _PAST_DUE_FLAG_COLUMN],
-)
-# The past-due flag is computed for display only and isn't part of the persisted ticket schema.
-edited_df = edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN])
-if "Date Closed" in edited_df.columns:
-    edited_df["Date Closed"] = edited_df["Date Closed"].astype(str).str.strip()
-
-# Auto-stamp Date Closed the moment a ticket is set to Closed.
-needs_close_stamp = (
-    (edited_df["Resolution Status"].astype(str).str.lower() == "resolved")
-    & (edited_df["Date Closed"].astype(str).str.strip() == "")
-)
-if needs_close_stamp.any():
-    edited_df.loc[needs_close_stamp, "Date Closed"] = get_eastern_us_timestamp()
-
-unedited_df = st.session_state.df[
-    ~st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
-]
-previously_edited_df = st.session_state.df[
-    st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
-].set_index("ID")
-for _, ticket in edited_df.iterrows():
-    previous_ticket = previously_edited_df.loc[ticket["ID"]]
-    if not ticket.equals(previous_ticket):
-        try:
-            get_ticket_repository().update_ticket(ticket.to_dict())
-        except Exception as exc:
-            st.error(f"Unable to update {ticket['ID']} in Supabase: {exc}")
-            st.stop()
-st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
-
-# Ticket detail: show attachments for a selected ticket.
-st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Ticket attachments</h2></div>",
-    unsafe_allow_html=True,
-)
-ticket_ids_with_attachments = [
-    tid for tid in st.session_state.df["ID"].astype(str).tolist()
-    if tid in st.session_state.ticket_attachments
-]
-detail_ticket_id = st.selectbox(
-    "Select a ticket to view its attachments",
-    options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
-    index=0,
-    key="detail_ticket_selectbox",
-)
-
-if detail_ticket_id:
-    attachments = st.session_state.ticket_attachments.get(detail_ticket_id, [])
-    if attachments:
-        st.write(f"{len(attachments)} attachment(s) for **{detail_ticket_id}**:")
-        for attachment in attachments:
-            display_data, display_mime = _to_displayable_image(attachment["data"], attachment["mime"])
-            if display_mime in ("image/jpeg", "image/png", "image/gif", "image/webp"):
-                st.image(display_data, caption=attachment["name"])
-            else:
-                # Browser cannot render this format; offer a download instead.
-                st.download_button(
-                    label=f"Download {attachment['name']}",
-                    data=attachment["data"],
-                    file_name=attachment["name"],
-                    mime=attachment["mime"],
-                    type="primary",
-                )
-    else:
-        st.info(f"No attachments for {detail_ticket_id}.")
-
-# Combined statistics and performance-trend section for the ticket.
-st.markdown(
-    f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance trend</h2></div>",
-    unsafe_allow_html=True,
-)
-
-
-def render_ticket_metrics_row(tickets_df: pd.DataFrame) -> None:
-    """Render the six standard KPI metrics for a set of tickets in a compact row."""
-    metric_cols = st.columns(6)
-    metric_cols[0].metric("Open", format_stat_value(calculate_open_ticket_count(tickets_df)))
-    metric_cols[1].metric("Urgent", format_stat_value(calculate_urgent_open_ticket_count(tickets_df)))
-    metric_cols[2].metric("Resolution %", f"{format_stat_value(calculate_resolution_rate(tickets_df))}%")
-    metric_cols[3].metric("Avg hours", format_stat_value(calculate_average_resolution_time_hours(tickets_df)))
-    metric_cols[4].metric("Overdue", format_stat_value(calculate_overdue_ticket_count(tickets_df)))
-    metric_cols[5].metric("On-time %", f"{format_stat_value(calculate_on_time_close_rate(tickets_df))}%")
-
-
-all_distinct_assignees = get_distinct_assignees(st.session_state.df)
-assignee_filter_options = ["All"] + list(ASSIGNEES)
-for extra_assignee in all_distinct_assignees:
-    if extra_assignee not in assignee_filter_options:
-        assignee_filter_options.append(extra_assignee)
-
-selected_stats_assignee = st.selectbox(
-    "Filter by assigned to",
-    options=assignee_filter_options,
-    key="stats_assignee_filter",
-)
-
-snapshot_file_name = (
-    f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
-    if selected_stats_assignee != "All"
-    else "assignee_snapshot.pdf"
-)
-st.download_button(
-    "Print assignee snapshot",
-    data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
-    file_name=snapshot_file_name,
-    mime="application/pdf",
-    type="primary",
-    disabled=selected_stats_assignee == "All",
-    help="Select a specific person under Filter by assigned to enable this.",
-)
-
-# No statistical or performance-trend output is shown until a specific person is
-# selected — aggregated (all-assignee) output would duplicate per-assignee breakdowns.
-if selected_stats_assignee == "All":
-    st.markdown(
-        f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
-        "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-        "Select a specific person under \"Filter by assigned to\" so as to see their individual statistics, and performance trend."
-        "</div>",
-        unsafe_allow_html=True,
-    )
-else:
-    for code_name in TICKET_CODES:
-        code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
-
-        st.markdown(
-            f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
-            unsafe_allow_html=True,
-        )
-
-        code_assignees = get_distinct_assignees(code_tickets)
-        assignees_for_code = (
-            [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
-        )
-
-        if not assignees_for_code:
-            st.caption(f"No assigned tickets for {code_name} yet.")
-        for person in assignees_for_code:
-            st.markdown(
-                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
-                unsafe_allow_html=True,
-            )
-            render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
-
-    trend_tickets = filter_tickets_by_assignee(st.session_state.df, selected_stats_assignee)
-    trend_df = calculate_resolution_time_trend(trend_tickets)
-    plot_df = trend_df.dropna(subset=["moving_average"])
-
-    if plot_df.empty:
-        st.markdown(
-            f"<div style='background:#FBEAEC;border:1px solid {DEEP_BURGUNDY};color:{DEEP_BURGUNDY};"
-            "padding:0.75rem 1rem;border-radius:8px;font-family: Helvetica, Arial, sans-serif; font-size:0.95rem;'>"
-            f"No average resolution time data yet for {selected_stats_assignee}."
-            "</div>",
-            unsafe_allow_html=True,
-        )
-    else:
-        plot_df = plot_df.copy()
-        plot_df["series"] = "7-Day Moving Average"
-        axis_style = {
-            "gridColor": "#D9D9D9",
-            "domainColor": "black",
-            "tickColor": "black",
-            "labelColor": "black",
-            "titleColor": "black",
-        }
-        trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
-            x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
-            y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
-            color=alt.Color(
-                "series:N",
-                scale=alt.Scale(domain=["7-Day Moving Average"], range=[DEEP_BURGUNDY]),
-                legend=alt.Legend(title="Legend", labelColor="black", titleColor="black"),
-            ),
-        ).properties(
-            height=340, title=f"{selected_stats_assignee} — Average Resolution Time (Hours)"
-        )
-        st.altair_chart(trend_chart, width="stretch")
 
 # Comments section for ticket Q&A.
 st.markdown(
