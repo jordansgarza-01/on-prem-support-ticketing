@@ -174,20 +174,29 @@ with header_title_col:
     )
 with header_portal_col:
     st.write("")
-    if st.button("🎫 My Tickets", key="my_tickets_icon_button", use_container_width=True):
-        st.session_state.show_my_tickets_prompt = not st.session_state.get(
-            "show_my_tickets_prompt", False
-        )
-
-if st.session_state.get("show_my_tickets_prompt", False) and not st.session_state.get("my_tickets_person"):
-    selected_my_tickets_person = st.selectbox(
-        "Select your name to view My Tickets",
-        ["-- Select your name --", *STAFF_DIRECTORY],
-        key="my_tickets_person_selectbox",
+    st.markdown(
+        f"""
+        <style>
+        .st-key-my_tickets_portal button {{
+            background-color: {DEEP_BURGUNDY} !important;
+            color: #ffffff !important;
+            border: 1px solid {DEEP_BURGUNDY} !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
     )
-    if selected_my_tickets_person != "-- Select your name --":
-        st.session_state.my_tickets_person = selected_my_tickets_person
-        st.rerun()
+    with st.container(key="my_tickets_portal"):
+        with st.popover("My Tickets", use_container_width=True):
+            selected_my_tickets_person = st.selectbox(
+                "Select your name to view My Tickets",
+                ["-- Select your name --", *STAFF_DIRECTORY],
+                key="my_tickets_person_selectbox",
+            )
+            if selected_my_tickets_person != "-- Select your name --":
+                st.session_state.my_tickets_person = selected_my_tickets_person
+                del st.session_state["my_tickets_person_selectbox"]
+                st.rerun()
 
 st.write(
     """
@@ -256,8 +265,8 @@ if my_tickets_person:
         unsafe_allow_html=True,
     )
     if st.button("← Back to dashboard", key="my_tickets_back_button"):
-        st.session_state.show_my_tickets_prompt = False
         st.session_state.my_tickets_person = None
+        st.session_state.pop("my_tickets_person_selectbox", None)
         st.rerun()
 
     tickets_submitted = st.session_state.df[
