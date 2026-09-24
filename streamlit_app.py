@@ -151,6 +151,7 @@ if not st.runtime.exists():
 
 APP_PASSWORD = "Platinum2025"
 INTERNAL_MANAGEMENT_PASSWORD = "ServiceStats01@!"
+TICKET_MANAGEMENT_PASSWORD = "ULSDfuelHC01@$$"
 
 if not st.session_state.get("authenticated", False):
     st.markdown(
@@ -169,17 +170,15 @@ if not st.session_state.get("authenticated", False):
 
 st.session_state.setdefault("current_view", "home")
 
-header_title_col, header_my_tickets_col, header_ism_col = st.columns([4, 1, 1.4])
-with header_title_col:
-    st.markdown(
-        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
-        unsafe_allow_html=True,
-    )
+st.markdown(
+    f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
+    unsafe_allow_html=True,
+)
 
 st.markdown(
     f"""
     <style>
-    .st-key-my_tickets_portal button, .st-key-internal_management_portal button {{
+    .st-key-my_tickets_portal button, .st-key-internal_management_portal button, .st-key-ticket_management_portal button {{
         background-color: {DEEP_BURGUNDY} !important;
         color: #ffffff !important;
         border: 1px solid {DEEP_BURGUNDY} !important;
@@ -190,8 +189,15 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+(
+    header_spacer_left,
+    header_my_tickets_col,
+    header_ism_col,
+    header_ticket_mgmt_col,
+    header_spacer_right,
+) = st.columns([1.3, 1.1, 1.9, 1.7, 1.3])
+
 with header_my_tickets_col:
-    st.write("")
     with st.container(key="my_tickets_portal"):
         with st.popover("My Tickets", use_container_width=True):
             selected_my_tickets_person = st.selectbox(
@@ -206,7 +212,6 @@ with header_my_tickets_col:
                 st.rerun()
 
 with header_ism_col:
-    st.write("")
     with st.container(key="internal_management_portal"):
         with st.popover("Performance Management", use_container_width=True):
             if st.session_state.get("internal_management_authenticated", False):
@@ -226,12 +231,27 @@ with header_ism_col:
                     else:
                         st.error("The password you entered is incorrect. Please try again.")
 
-st.write(
-    """
-    Please use this system to request assistance, and/or submit a support ticket for issues related to: JDA, CSW, SAP, ETQ, SmartSheet, SharePoint,
-Excel, Power Platform, Opendock Nova, UKG WFM, Workday HCM, Honeywell CT47, Honeywell RP4D, Zebra ZT620, Ricoh IM 460F model multi-function printers, HAI Robotics deployments (HaiPick Systems suite), wireless internet, ethernet, Bluetooth, continuous improvement, process control, quality control, digital transformation, industrial automation, facilities management, maintenance, and/or industrial hygiene.
-    """
-)
+with header_ticket_mgmt_col:
+    with st.container(key="ticket_management_portal"):
+        with st.popover("Ticket Management", use_container_width=True):
+            if st.session_state.get("ticket_management_authenticated", False):
+                if st.button("Open Ticket Management", key="tm_open_button"):
+                    st.session_state.current_view = "ticket_management"
+                    st.rerun()
+            else:
+                tm_password_input = st.text_input(
+                    "Password", type="password", key="tm_password_input"
+                )
+                if st.button("Log in", key="tm_unlock_button"):
+                    if tm_password_input == TICKET_MANAGEMENT_PASSWORD:
+                        st.session_state.ticket_management_authenticated = True
+                        st.session_state.current_view = "ticket_management"
+                        st.session_state.pop("tm_password_input", None)
+                        st.rerun()
+                    else:
+                        st.error("The password you entered is incorrect. Please try again.")
+
+st.write("Please use this system to request assistance.")
 
 # Bump this whenever SupabaseTicketRepository's public interface changes, so the
 # cached resource below is rebuilt instead of reusing a stale pre-change instance.
@@ -429,10 +449,122 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
 
 if st.session_state.get("current_view") == "internal_management":
     st.markdown(
-        f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>Performance Management</h2></div>",
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Performance Management</h1></div>",
         unsafe_allow_html=True,
     )
     if st.button("← Back to home screen", key="ism_back_button"):
+        st.session_state.current_view = "home"
+        st.rerun()
+
+    # Combined statistics and performance-trend section for the ticket.
+    st.markdown(
+        f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance trend</h2></div>",
+        unsafe_allow_html=True,
+    )
+
+    def render_ticket_metrics_row(tickets_df: pd.DataFrame) -> None:
+        """Render the six standard KPI metrics for a set of tickets in a compact row."""
+        metric_cols = st.columns(6)
+        metric_cols[0].metric("Open", format_stat_value(calculate_open_ticket_count(tickets_df)))
+        metric_cols[1].metric("Urgent", format_stat_value(calculate_urgent_open_ticket_count(tickets_df)))
+        metric_cols[2].metric("Resolution %", f"{format_stat_value(calculate_resolution_rate(tickets_df))}%")
+        metric_cols[3].metric("Avg hours", format_stat_value(calculate_average_resolution_time_hours(tickets_df)))
+        metric_cols[4].metric("Overdue", format_stat_value(calculate_overdue_ticket_count(tickets_df)))
+        metric_cols[5].metric("On-time %", f"{format_stat_value(calculate_on_time_close_rate(tickets_df))}%")
+
+    all_distinct_assignees = get_distinct_assignees(st.session_state.df)
+    assignee_filter_options = ["All"] + list(ASSIGNEES)
+    for extra_assignee in all_distinct_assignees:
+        if extra_assignee not in assignee_filter_options:
+            assignee_filter_options.append(extra_assignee)
+
+    selected_stats_assignee = st.selectbox(
+        "Filter by assigned to",
+        options=assignee_filter_options,
+        key="stats_assignee_filter",
+    )
+
+    snapshot_file_name = (
+        f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
+        if selected_stats_assignee != "All"
+        else "assignee_snapshot.pdf"
+    )
+    st.download_button(
+        "Print assignee snapshot",
+        data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
+        file_name=snapshot_file_name,
+        mime="application/pdf",
+        type="primary",
+        disabled=selected_stats_assignee == "All",
+        help="Select a specific person under Filter by assigned to enable this.",
+    )
+
+    # No statistical or performance-trend output is shown until a specific person is
+    # selected — aggregated (all-assignee) output would duplicate per-assignee breakdowns.
+    if selected_stats_assignee == "All":
+        _render_burgundy_notice(
+            "Select a specific person under \"Filter by assigned to\" so as to see their individual statistics, and performance trend."
+        )
+    else:
+        for code_name in TICKET_CODES:
+            code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
+
+            st.markdown(
+                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
+                unsafe_allow_html=True,
+            )
+
+            code_assignees = get_distinct_assignees(code_tickets)
+            assignees_for_code = (
+                [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
+            )
+
+            if not assignees_for_code:
+                st.caption(f"No assigned tickets for {code_name} yet.")
+            for person in assignees_for_code:
+                st.markdown(
+                    f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
+                    unsafe_allow_html=True,
+                )
+                render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
+
+        trend_tickets = filter_tickets_by_assignee(st.session_state.df, selected_stats_assignee)
+        trend_df = calculate_resolution_time_trend(trend_tickets)
+        plot_df = trend_df.dropna(subset=["moving_average"])
+
+        if plot_df.empty:
+            _render_burgundy_notice(f"No average resolution time data yet for {selected_stats_assignee}.")
+        else:
+            plot_df = plot_df.copy()
+            plot_df["series"] = "7-Day Moving Average"
+            axis_style = {
+                "gridColor": "#D9D9D9",
+                "domainColor": "black",
+                "tickColor": "black",
+                "labelColor": "black",
+                "titleColor": "black",
+            }
+            trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
+                x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
+                y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
+                color=alt.Color(
+                    "series:N",
+                    scale=alt.Scale(domain=["7-Day Moving Average"], range=[DEEP_BURGUNDY]),
+                    legend=alt.Legend(title="Legend", labelColor="black", titleColor="black"),
+                ),
+            ).properties(
+                height=340, title=f"{selected_stats_assignee} — Average Resolution Time (Hours)"
+            )
+            st.altair_chart(trend_chart, width="stretch")
+
+    st.stop()
+
+if st.session_state.get("current_view") == "ticket_management":
+    st.markdown(
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Ticket Management</h1></div>",
+        unsafe_allow_html=True,
+    )
+    if st.button("← Back to home screen", key="tm_back_button"):
         st.session_state.current_view = "home"
         st.rerun()
 
@@ -683,107 +815,6 @@ if st.session_state.get("current_view") == "internal_management":
                 st.error(f"Unable to update {ticket['ID']} in Supabase: {exc}")
                 st.stop()
     st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
-
-    # Combined statistics and performance-trend section for the ticket.
-    st.markdown(
-        f"<div style='margin: 1.5rem 0 0.5rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.4rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0;'>Statistics & Performance trend</h2></div>",
-        unsafe_allow_html=True,
-    )
-
-    def render_ticket_metrics_row(tickets_df: pd.DataFrame) -> None:
-        """Render the six standard KPI metrics for a set of tickets in a compact row."""
-        metric_cols = st.columns(6)
-        metric_cols[0].metric("Open", format_stat_value(calculate_open_ticket_count(tickets_df)))
-        metric_cols[1].metric("Urgent", format_stat_value(calculate_urgent_open_ticket_count(tickets_df)))
-        metric_cols[2].metric("Resolution %", f"{format_stat_value(calculate_resolution_rate(tickets_df))}%")
-        metric_cols[3].metric("Avg hours", format_stat_value(calculate_average_resolution_time_hours(tickets_df)))
-        metric_cols[4].metric("Overdue", format_stat_value(calculate_overdue_ticket_count(tickets_df)))
-        metric_cols[5].metric("On-time %", f"{format_stat_value(calculate_on_time_close_rate(tickets_df))}%")
-
-    all_distinct_assignees = get_distinct_assignees(st.session_state.df)
-    assignee_filter_options = ["All"] + list(ASSIGNEES)
-    for extra_assignee in all_distinct_assignees:
-        if extra_assignee not in assignee_filter_options:
-            assignee_filter_options.append(extra_assignee)
-
-    selected_stats_assignee = st.selectbox(
-        "Filter by assigned to",
-        options=assignee_filter_options,
-        key="stats_assignee_filter",
-    )
-
-    snapshot_file_name = (
-        f"{selected_stats_assignee.replace(' ', '_').lower()}_snapshot.pdf"
-        if selected_stats_assignee != "All"
-        else "assignee_snapshot.pdf"
-    )
-    st.download_button(
-        "Print assignee snapshot",
-        data=build_assignee_snapshot_pdf(st.session_state.df, selected_stats_assignee),
-        file_name=snapshot_file_name,
-        mime="application/pdf",
-        type="primary",
-        disabled=selected_stats_assignee == "All",
-        help="Select a specific person under Filter by assigned to enable this.",
-    )
-
-    # No statistical or performance-trend output is shown until a specific person is
-    # selected — aggregated (all-assignee) output would duplicate per-assignee breakdowns.
-    if selected_stats_assignee == "All":
-        _render_burgundy_notice(
-            "Select a specific person under \"Filter by assigned to\" so as to see their individual statistics, and performance trend."
-        )
-    else:
-        for code_name in TICKET_CODES:
-            code_tickets = filter_tickets_by_code(st.session_state.df, code_name)
-
-            st.markdown(
-                f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 1.05rem; font-weight: 700; color: {DEEP_BURGUNDY}; margin: 0.5rem 0;'>{code_name}</div>",
-                unsafe_allow_html=True,
-            )
-
-            code_assignees = get_distinct_assignees(code_tickets)
-            assignees_for_code = (
-                [selected_stats_assignee] if selected_stats_assignee in code_assignees else []
-            )
-
-            if not assignees_for_code:
-                st.caption(f"No assigned tickets for {code_name} yet.")
-            for person in assignees_for_code:
-                st.markdown(
-                    f"<div style='font-family: Helvetica, Arial, sans-serif; font-size: 0.9rem; font-weight: 600; color: {DARK_SLATE_CHARCOAL}; margin: 0.5rem 0 0.25rem 1rem;'>{code_name} &middot; {person}</div>",
-                    unsafe_allow_html=True,
-                )
-                render_ticket_metrics_row(filter_tickets_by_assignee(code_tickets, person))
-
-        trend_tickets = filter_tickets_by_assignee(st.session_state.df, selected_stats_assignee)
-        trend_df = calculate_resolution_time_trend(trend_tickets)
-        plot_df = trend_df.dropna(subset=["moving_average"])
-
-        if plot_df.empty:
-            _render_burgundy_notice(f"No average resolution time data yet for {selected_stats_assignee}.")
-        else:
-            plot_df = plot_df.copy()
-            plot_df["series"] = "7-Day Moving Average"
-            axis_style = {
-                "gridColor": "#D9D9D9",
-                "domainColor": "black",
-                "tickColor": "black",
-                "labelColor": "black",
-                "titleColor": "black",
-            }
-            trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
-                x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
-                y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
-                color=alt.Color(
-                    "series:N",
-                    scale=alt.Scale(domain=["7-Day Moving Average"], range=[DEEP_BURGUNDY]),
-                    legend=alt.Legend(title="Legend", labelColor="black", titleColor="black"),
-                ),
-            ).properties(
-                height=340, title=f"{selected_stats_assignee} — Average Resolution Time (Hours)"
-            )
-            st.altair_chart(trend_chart, width="stretch")
 
     st.stop()
 
