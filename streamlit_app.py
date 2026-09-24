@@ -895,7 +895,7 @@ if submitted:
     except Exception as exc:
         st.error(f"Unable to save {new_ticket_id} to Supabase: {exc}")
         st.stop()
-    st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0)
+    st.session_state.df = pd.concat([df_new, st.session_state.df], axis=0, ignore_index=True)
 
 # Show section to view and edit existing tickets in a table.
 st.markdown(

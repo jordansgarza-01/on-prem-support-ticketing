@@ -10,6 +10,8 @@ from ticket_data import (
     calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
     calculate_average_open_tickets_per_week,
+    calculate_due_date,
+    calculate_stale_open_ticket_flags,
     calculate_urgent_open_ticket_count,
     calculate_open_ticket_count,
     calculate_resolution_rate,
@@ -498,6 +500,56 @@ def test_helpdesk_kpis_calculate_from_ticket_data():
     assert calculate_urgent_open_ticket_count(df) == 1
     assert calculate_resolution_rate(df) == 33.33
     assert calculate_average_resolution_time_hours(df) == 4.5
+
+
+def test_calculate_average_resolution_time_hours_excludes_weekends():
+    # Submitted Friday 4pm, resolved the following Monday at 10am: only Friday's
+    # remaining 8 hours and Monday's 10 hours should count (18h), skipping the
+    # Saturday/Sunday in between entirely.
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-2001",
+                "Priority": "High",
+                "Date Submitted": "2026-08-07 16:00:00 ET",
+                "Date Closed": "2026-08-10 10:00:00 ET",
+                "Resolution Status": "Resolved",
+            }
+        ]
+    )
+
+    assert calculate_average_resolution_time_hours(df) == 18.0
+
+
+def test_calculate_due_date_skips_weekends():
+    # 7 business days after a Friday should land on the Tuesday nine calendar
+    # days later (two weekends skipped along the way).
+    due_date = calculate_due_date("2026-08-07 09:00:00 ET", days=7)
+
+    assert due_date == "2026-08-18 09:00:00 ET"
+
+
+def test_calculate_stale_open_ticket_flags_counts_only_business_days(monkeypatch):
+    import ticket_data
+
+    # Freeze "now" to a Monday so the elapsed-days count is deterministic.
+    monkeypatch.setattr(
+        ticket_data.pd.Timestamp, "now", staticmethod(lambda: pd.Timestamp("2026-08-17 09:00:00"))
+    )
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-2002",
+                "Priority": "High",
+                "Date Submitted": "2026-08-07 09:00:00 ET",  # Friday, 6 business days before "now"
+                "Date Closed": "",
+                "Resolution Status": "Pending",
+            }
+        ]
+    )
+
+    assert list(calculate_stale_open_ticket_flags(df, days=7)) == [False]
+    assert list(calculate_stale_open_ticket_flags(df, days=6)) == [True]
 
 
 def test_calculate_average_tickets_per_week_ignores_unparseable_dates():

@@ -103,8 +103,51 @@ def calculate_resolution_rate(df: pd.DataFrame) -> float:
     return round(float(resolved_count / len(df) * 100), 2)
 
 
+def _business_hours_between_timestamps(start: pd.Timestamp, end: pd.Timestamp) -> float:
+    """Return elapsed hours between two timestamps counting only Monday-Friday (a
+    standard business work week) and excluding weekend time entirely."""
+    if pd.isna(start) or pd.isna(end):
+        return float("nan")
+    if end <= start:
+        return (end - start).total_seconds() / 3600
+
+    total_hours = 0.0
+    current = start
+    end_of_start_day = current.normalize() + pd.Timedelta(days=1)
+    while end_of_start_day < end:
+        if current.weekday() < 5:
+            total_hours += (end_of_start_day - current).total_seconds() / 3600
+        current = end_of_start_day
+        end_of_start_day = current + pd.Timedelta(days=1)
+    if current.weekday() < 5:
+        total_hours += (end - current).total_seconds() / 3600
+    return total_hours
+
+
+def _business_hours_series(start: pd.Series, end: pd.Series) -> pd.Series:
+    """Apply `_business_hours_between_timestamps` row-wise across two date Series."""
+    return pd.Series(
+        [_business_hours_between_timestamps(s, e) for s, e in zip(start, end)],
+        index=start.index,
+        dtype="float64",
+    )
+
+
+def _business_days_elapsed(start: pd.Series, end: pd.Series) -> pd.Series:
+    """Return whole business days (Mon-Fri) elapsed between start and end, skipping
+    weekends entirely, as a float Series (NaN where either date is missing)."""
+    result = pd.Series(np.nan, index=start.index, dtype="float64")
+    valid = start.notna() & end.notna()
+    if valid.any():
+        start_dates = start[valid].dt.normalize().to_numpy().astype("datetime64[D]")
+        end_dates = end[valid].dt.normalize().to_numpy().astype("datetime64[D]")
+        result.loc[valid] = np.busday_count(start_dates, end_dates).astype(float)
+    return result
+
+
 def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
-    """Return average elapsed hours from submission to resolution for valid closed tickets."""
+    """Return average business-hours (Mon-Fri, weekends excluded) from submission to
+    resolution for valid closed tickets."""
     status_column = _get_resolution_status_column(df)
     if (
         df.empty
@@ -116,39 +159,47 @@ def calculate_average_resolution_time_hours(df: pd.DataFrame) -> float:
 
     submitted_dates = _parse_date_column(df, "Date Submitted")
     closed_dates = _parse_date_column(df, "Date Closed")
-    resolution_hours = (closed_dates - submitted_dates).dt.total_seconds() / 3600
+    resolution_hours = _business_hours_series(submitted_dates, closed_dates)
     is_resolved = df[status_column].astype(str).str.lower() == "resolved"
     valid_resolution_hours = resolution_hours[is_resolved & (resolution_hours >= 0)]
     return round(float(valid_resolution_hours.mean()), 2) if not valid_resolution_hours.empty else 0.0
 
 
 def calculate_due_date(submitted_at: str, days: int = 7) -> str:
-    """Return a due-date timestamp `days` after the given submission timestamp."""
+    """Return a due-date timestamp `days` business days (Mon-Fri) after the given
+    submission timestamp, skipping weekends."""
     cleaned_submitted_at = str(submitted_at).strip()
     parsed = pd.to_datetime(
         cleaned_submitted_at.replace(" ET", ""), format="mixed", errors="coerce"
     )
     if pd.isna(parsed):
         parsed = dt.datetime.now()
-    due = parsed + dt.timedelta(days=days)
+    due = parsed
+    added_days = 0
+    while added_days < days:
+        due += dt.timedelta(days=1)
+        if due.weekday() < 5:
+            added_days += 1
     return due.strftime("%Y-%m-%d %H:%M:%S ET")
 
 
 def calculate_stale_open_ticket_flags(df: pd.DataFrame, days: int = 7) -> pd.Series:
-    """Return a boolean Series flagging unresolved tickets open for `days` or more."""
+    """Return a boolean Series flagging unresolved tickets open for `days` or more
+    business days (Mon-Fri), skipping weekends."""
     status_column = _get_resolution_status_column(df)
     if df.empty or status_column is None:
         return pd.Series(False, index=df.index, dtype=bool)
 
     submitted_dates = _parse_date_column(df, "Date Submitted")
-    days_open = (pd.Timestamp.now() - submitted_dates).dt.total_seconds() / 86400
+    now_series = pd.Series(pd.Timestamp.now(), index=df.index)
+    business_days_open = _business_days_elapsed(submitted_dates, now_series)
     is_open = df[status_column].astype(str).str.lower() != "resolved"
-    return is_open & (days_open >= days)
+    return is_open & (business_days_open >= days)
 
 
 def calculate_past_due_labels(df: pd.DataFrame, days: int = 7) -> pd.Series:
     """Return per-row Past Due labels: 'Flagged' for stale open tickets, 'N/A' for
-    tickets closed within the `days` threshold, and '' otherwise."""
+    tickets closed within the `days` business-day (Mon-Fri) threshold, and '' otherwise."""
     if df.empty:
         return pd.Series("", index=df.index, dtype="object")
 
@@ -159,8 +210,8 @@ def calculate_past_due_labels(df: pd.DataFrame, days: int = 7) -> pd.Series:
     is_open = df[status_column].astype(str).str.lower() != "resolved"
     submitted_dates = _parse_date_column(df, "Date Submitted")
     closed_dates = _parse_date_column(df, "Date Closed")
-    days_to_close = (closed_dates - submitted_dates).dt.total_seconds() / 86400
-    closed_within_threshold = (~is_open) & closed_dates.notna() & (days_to_close < days)
+    business_days_to_close = _business_days_elapsed(submitted_dates, closed_dates)
+    closed_within_threshold = (~is_open) & closed_dates.notna() & (business_days_to_close < days)
 
     labels = pd.Series("", index=df.index, dtype="object")
     labels[calculate_stale_open_ticket_flags(df, days=days)] = "Flagged"
@@ -214,7 +265,7 @@ def calculate_daily_average_resolution_time_hours(df: pd.DataFrame) -> pd.Series
 
     submitted_dates = _parse_date_column(resolved_df, "Date Submitted")
     closed_dates = _parse_date_column(resolved_df, "Date Closed")
-    resolution_hours = (closed_dates - submitted_dates).dt.total_seconds() / 3600
+    resolution_hours = _business_hours_series(submitted_dates, closed_dates)
     valid = closed_dates.notna() & resolution_hours.notna() & (resolution_hours >= 0)
     if not valid.any():
         return pd.Series(dtype="float64")
