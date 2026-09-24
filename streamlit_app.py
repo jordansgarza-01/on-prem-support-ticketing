@@ -249,15 +249,18 @@ with header_my_tickets_col:
 
 with header_ism_col:
     with st.container(key="internal_management_portal"):
-        with st.popover("Performance Management", use_container_width=True):
-            if st.session_state.get("internal_management_authenticated", False):
-                st.button(
-                    "Open Performance Management",
-                    key="ism_open_button",
-                    on_click=_go_to_view,
-                    args=("internal_management",),
-                )
-            else:
+        if st.session_state.get("internal_management_authenticated", False):
+            # A plain top-level button (not nested inside a popover) so the click is a
+            # single, unambiguous interaction — re-entry doesn't need the password gate.
+            st.button(
+                "Performance Management",
+                key="ism_open_button",
+                on_click=_go_to_view,
+                args=("internal_management",),
+                use_container_width=True,
+            )
+        else:
+            with st.popover("Performance Management", use_container_width=True):
                 st.text_input("Password", type="password", key="ism_password_input")
                 st.button("Log in", key="ism_unlock_button", on_click=_attempt_internal_management_login)
                 if st.session_state.pop("ism_login_error", False):
@@ -265,15 +268,16 @@ with header_ism_col:
 
 with header_ticket_mgmt_col:
     with st.container(key="ticket_management_portal"):
-        with st.popover("Ticket Management", use_container_width=True):
-            if st.session_state.get("ticket_management_authenticated", False):
-                st.button(
-                    "Open Ticket Management",
-                    key="tm_open_button",
-                    on_click=_go_to_view,
-                    args=("ticket_management",),
-                )
-            else:
+        if st.session_state.get("ticket_management_authenticated", False):
+            st.button(
+                "Ticket Management",
+                key="tm_open_button",
+                on_click=_go_to_view,
+                args=("ticket_management",),
+                use_container_width=True,
+            )
+        else:
+            with st.popover("Ticket Management", use_container_width=True):
                 st.text_input("Password", type="password", key="tm_password_input")
                 st.button("Log in", key="tm_unlock_button", on_click=_attempt_ticket_management_login)
                 if st.session_state.pop("tm_login_error", False):
