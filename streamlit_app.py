@@ -184,18 +184,20 @@ st.markdown(
         border: 1px solid {DEEP_BURGUNDY} !important;
         white-space: nowrap !important;
     }}
+    .st-key-internal_management_portal button {{
+        padding-left: 1.25rem !important;
+    }}
     </style>
     """,
     unsafe_allow_html=True,
 )
 
 (
-    header_spacer_left,
     header_my_tickets_col,
     header_ism_col,
     header_ticket_mgmt_col,
     header_spacer_right,
-) = st.columns([1.3, 1.1, 1.9, 1.7, 1.3])
+) = st.columns([1.1, 2.1, 1.7, 5.1])
 
 with header_my_tickets_col:
     with st.container(key="my_tickets_portal"):
@@ -391,7 +393,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     ]
 
     st.markdown(
-        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Submitted</h3>",
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets submitted</h3>",
         unsafe_allow_html=True,
     )
     if tickets_submitted.empty:
@@ -400,7 +402,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
         st.dataframe(tickets_submitted, width="stretch", hide_index=True)
 
     st.markdown(
-        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets Assigned</h3>",
+        f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Tickets assigned</h3>",
         unsafe_allow_html=True,
     )
     if tickets_assigned.empty:
