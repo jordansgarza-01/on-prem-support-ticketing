@@ -467,7 +467,43 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     if tickets_assigned.empty:
         _render_burgundy_notice("No tickets currently assigned to this person.")
     else:
-        st.dataframe(_apply_rag_styling(tickets_assigned), width="stretch", hide_index=True)
+        # Notes is the one manually-editable field here — the assignee can log work updates
+        # directly on their assigned tickets; every other column stays read-only/RAG-colored.
+        tickets_assigned_edited_df = st.data_editor(
+            _apply_rag_styling(tickets_assigned),
+            width="stretch",
+            hide_index=True,
+            key="my_tickets_assigned_editor",
+            column_config={
+                "Notes": st.column_config.TextColumn(
+                    "Notes",
+                    help="Internal notes for this ticket",
+                    width="large",
+                ),
+            },
+            disabled=[col for col in tickets_assigned.columns if col != "Notes"] + [_PAST_DUE_FLAG_COLUMN],
+        )
+        tickets_assigned_edited_df = tickets_assigned_edited_df.drop(columns=[_PAST_DUE_FLAG_COLUMN], errors="ignore")
+
+        original_tickets_assigned_by_id = tickets_assigned.set_index("ID")
+        notes_updated = False
+        for _, ticket in tickets_assigned_edited_df.iterrows():
+            ticket_id = str(ticket["ID"])
+            if ticket_id not in original_tickets_assigned_by_id.index.astype(str):
+                continue
+            original_notes = str(original_tickets_assigned_by_id.loc[ticket_id, "Notes"])
+            new_notes = str(ticket["Notes"])
+            if new_notes != original_notes:
+                df_mask = st.session_state.df["ID"].astype(str) == ticket_id
+                st.session_state.df.loc[df_mask, "Notes"] = new_notes
+                try:
+                    get_ticket_repository().update_ticket(st.session_state.df.loc[df_mask].iloc[0].to_dict())
+                except Exception as exc:
+                    st.error(f"Unable to update {ticket_id} in Supabase: {exc}")
+                    st.stop()
+                notes_updated = True
+        if notes_updated:
+            st.rerun()
 
     my_ticket_ids = sorted(
         set(tickets_submitted["ID"].astype(str)) | set(tickets_assigned["ID"].astype(str))
