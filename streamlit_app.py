@@ -187,6 +187,49 @@ def _attempt_ticket_management_login() -> None:
         st.session_state.tm_login_error = True
 
 
+def _apply_my_ticket_status_update() -> None:
+    ticket_id = st.session_state.get("my_tickets_update_status_selectbox", "")
+    new_status = st.session_state.get("my_tickets_update_status_value_selectbox", "")
+    current_person = st.session_state.get("my_tickets_person", "")
+    if not ticket_id or new_status not in ("Pending", "In Process", "Resolved"):
+        st.session_state.my_tickets_status_error = "Select a ticket and status first."
+        return
+
+    tickets = st.session_state.df
+    ticket_mask = tickets["ID"].astype(str) == str(ticket_id)
+    if not ticket_mask.any():
+        st.session_state.my_tickets_status_error = f"Ticket {ticket_id} could not be found."
+        return
+
+    ticket = tickets.loc[ticket_mask].iloc[0].copy()
+    belongs_to_person = (
+        str(ticket.get("Submitted By", "")).strip().casefold() == current_person.casefold()
+        or str(ticket.get("Assigned To", "")).strip().casefold() == current_person.casefold()
+    )
+    if not belongs_to_person:
+        st.session_state.my_tickets_status_error = "You can only update tickets you submitted or are assigned to."
+        return
+
+    ticket["Resolution Status"] = new_status
+    if new_status == "Resolved":
+        if not str(ticket.get("Date Closed", "")).strip():
+            ticket["Date Closed"] = get_eastern_us_timestamp()
+    else:
+        ticket["Date Closed"] = ""
+
+    try:
+        get_ticket_repository().update_ticket(ticket.to_dict())
+    except Exception as exc:
+        st.session_state.my_tickets_status_error = f"Unable to update {ticket_id} in Supabase: {exc}"
+        return
+
+    ticket_row_index = tickets.index[ticket_mask][0]
+    st.session_state.df.at[ticket_row_index, "Resolution Status"] = new_status
+    st.session_state.df.at[ticket_row_index, "Date Closed"] = ticket["Date Closed"]
+    st.session_state.my_tickets_status_success = f"Updated {ticket_id} to {new_status}."
+    st.session_state.pop("my_tickets_status_error", None)
+
+
 if not st.session_state.get("authenticated", False):
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY};'>P&HS | Internal Support Portal</h1></div>",
@@ -563,26 +606,17 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     with my_tickets_status_button_col:
         st.write("")
         st.write("")
-        my_tickets_apply_status_clicked = st.button(
-            "Apply status", type="primary", key="my_tickets_apply_status_button"
+        st.button(
+            "Apply status",
+            type="primary",
+            key="my_tickets_apply_status_button",
+            on_click=_apply_my_ticket_status_update,
         )
 
-    if my_tickets_apply_status_clicked and my_tickets_status_ticket_id:
-        ticket_mask = st.session_state.df["ID"].astype(str) == my_tickets_status_ticket_id
-        st.session_state.df.loc[ticket_mask, "Resolution Status"] = my_tickets_new_resolution_status
-        if my_tickets_new_resolution_status.lower() == "resolved":
-            current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
-            if (current_date_closed == "").all():
-                st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
-        else:
-            st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
-        try:
-            get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
-        except Exception as exc:
-            st.error(f"Unable to update {my_tickets_status_ticket_id} in Supabase: {exc}")
-            st.stop()
-        st.success(f"Updated {my_tickets_status_ticket_id} to {my_tickets_new_resolution_status}.")
-        st.rerun()
+    if status_error := st.session_state.pop("my_tickets_status_error", None):
+        st.error(status_error)
+    if status_success := st.session_state.pop("my_tickets_status_success", None):
+        st.success(status_success)
 
     st.markdown(
         f"<h3 style='font-family: Helvetica, Arial, sans-serif; font-size: 1.2rem; color: {DEEP_BURGUNDY};'>Ticket attachments</h3>",

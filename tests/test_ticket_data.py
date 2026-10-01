@@ -1,4 +1,5 @@
 import pandas as pd
+import streamlit as st
 
 import streamlit_app
 from ticket_repository import (
@@ -752,6 +753,126 @@ def test_get_github_models_token_ignores_generic_github_tokens(monkeypatch):
     monkeypatch.setenv("GH_TOKEN", "gh-token")
 
     assert streamlit_app._get_github_models_token() is None
+
+
+def test_my_tickets_status_update_persists_without_corrupting_ticket_row(monkeypatch):
+    # Exercises _apply_my_ticket_status_update directly (not via AppTest): this module gets
+    # bare-imported by this test file, which leaves Streamlit's form-tracking state such that a
+    # *subsequent* AppTest run incorrectly believes unrelated top-level buttons are inside
+    # st.form("add_ticket_form"), raising StreamlitInvalidFormCallbackError. Calling the callback
+    # directly against st.session_state (which works fine outside a ScriptRunContext) avoids that
+    # landmine entirely while still covering the real bug this test guards against: a prior
+    # implementation assigned a misaligned Series via `.loc[mask, cols] = ticket_row`, which
+    # silently corrupted the updated ticket's other columns to NaN.
+    calls = []
+
+    class FakeRepository:
+        def update_ticket(self, record):
+            calls.append(record)
+
+    monkeypatch.setattr(streamlit_app, "get_ticket_repository", lambda: FakeRepository())
+
+    tickets = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-1",
+                "Issue": "My ticket",
+                "Code": "IT",
+                "Priority": "Low",
+                "Date Submitted": "2026-09-28 09:00:00 ET",
+                "Due Date": "2026-10-07 09:00:00 ET",
+                "Date Closed": "",
+                "Submitted By": "Gary Lewis",
+                "Assigned To": "",
+                "Notes": "Keep this note",
+                "Resolution Status": "Pending",
+            },
+            {
+                "ID": "TICKET-2",
+                "Issue": "Other person's ticket",
+                "Code": "CI",
+                "Priority": "High",
+                "Date Submitted": "2026-09-28 09:00:00 ET",
+                "Due Date": "2026-10-07 09:00:00 ET",
+                "Date Closed": "",
+                "Submitted By": "Someone Else",
+                "Assigned To": "Someone Else",
+                "Notes": "Do not change",
+                "Resolution Status": "Pending",
+            },
+        ]
+    )
+
+    st.session_state.clear()
+    try:
+        st.session_state["df"] = tickets.copy()
+        st.session_state["my_tickets_person"] = "Gary Lewis"
+        st.session_state["my_tickets_update_status_selectbox"] = "TICKET-1"
+        st.session_state["my_tickets_update_status_value_selectbox"] = "Resolved"
+
+        streamlit_app._apply_my_ticket_status_update()
+
+        assert "my_tickets_status_error" not in st.session_state
+        assert st.session_state["my_tickets_status_success"] == "Updated TICKET-1 to Resolved."
+
+        updated = st.session_state["df"].set_index("ID")
+        assert updated.loc["TICKET-1", "Resolution Status"] == "Resolved"
+        assert str(updated.loc["TICKET-1", "Date Closed"]).strip()
+        assert updated.loc["TICKET-1", "Issue"] == "My ticket"
+        assert updated.loc["TICKET-1", "Notes"] == "Keep this note"
+        assert updated.loc["TICKET-2", "Resolution Status"] == "Pending"
+
+        assert len(calls) == 1
+        assert calls[0]["ID"] == "TICKET-1"
+        assert calls[0]["Resolution Status"] == "Resolved"
+    finally:
+        st.session_state.clear()
+
+
+def test_my_tickets_status_update_rejects_ticket_not_owned_by_person(monkeypatch):
+    calls = []
+
+    class FakeRepository:
+        def update_ticket(self, record):
+            calls.append(record)
+
+    monkeypatch.setattr(streamlit_app, "get_ticket_repository", lambda: FakeRepository())
+
+    tickets = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-2",
+                "Issue": "Other person's ticket",
+                "Code": "CI",
+                "Priority": "High",
+                "Date Submitted": "2026-09-28 09:00:00 ET",
+                "Due Date": "2026-10-07 09:00:00 ET",
+                "Date Closed": "",
+                "Submitted By": "Someone Else",
+                "Assigned To": "Someone Else",
+                "Notes": "Do not change",
+                "Resolution Status": "Pending",
+            },
+        ]
+    )
+
+    st.session_state.clear()
+    try:
+        st.session_state["df"] = tickets.copy()
+        st.session_state["my_tickets_person"] = "Gary Lewis"
+        st.session_state["my_tickets_update_status_selectbox"] = "TICKET-2"
+        st.session_state["my_tickets_update_status_value_selectbox"] = "Resolved"
+
+        streamlit_app._apply_my_ticket_status_update()
+
+        assert calls == []
+        assert "my_tickets_status_success" not in st.session_state
+        assert st.session_state["my_tickets_status_error"] == (
+            "You can only update tickets you submitted or are assigned to."
+        )
+        assert st.session_state["df"].set_index("ID").loc["TICKET-2", "Resolution Status"] == "Pending"
+    finally:
+        st.session_state.clear()
 
 
 def test_get_github_models_token_uses_streamlit_secrets(monkeypatch):
