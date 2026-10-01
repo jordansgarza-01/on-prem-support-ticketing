@@ -21,6 +21,7 @@ from ticket_data import (
     delete_ticket_by_id,
     filter_tickets_by_code,
     filter_tickets_by_id,
+    filter_tickets_by_resolution_status,
     load_ticket_dataframe,
     sanitize_ticket_dataframe,
     save_ticket_dataframe,
@@ -392,6 +393,33 @@ def test_filter_tickets_by_code_returns_matching_tickets():
     filtered = filter_tickets_by_code(df, "it")
 
     assert filtered["ID"].tolist() == ["TICKET-1009", "TICKET-1011"]
+
+
+def test_filter_tickets_by_resolution_status_returns_matching_tickets():
+    df = pd.DataFrame(
+        [
+            {"ID": "TICKET-2001", "Resolution Status": "Pending"},
+            {"ID": "TICKET-2002", "Resolution Status": "Resolved"},
+            {"ID": "TICKET-2003", "Resolution Status": "pending"},
+        ]
+    )
+
+    filtered = filter_tickets_by_resolution_status(df, "Pending")
+
+    assert filtered["ID"].tolist() == ["TICKET-2001", "TICKET-2003"]
+
+
+def test_filter_tickets_by_resolution_status_returns_all_when_all_selected():
+    df = pd.DataFrame(
+        [
+            {"ID": "TICKET-2001", "Resolution Status": "Pending"},
+            {"ID": "TICKET-2002", "Resolution Status": "Resolved"},
+        ]
+    )
+
+    filtered = filter_tickets_by_resolution_status(df, "All")
+
+    assert filtered["ID"].tolist() == ["TICKET-2001", "TICKET-2002"]
 
 
 def test_calculate_average_open_tickets_per_week_uses_ticket_history():

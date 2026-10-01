@@ -646,6 +646,17 @@ def filter_tickets_by_assignee(df: pd.DataFrame, assignee: str) -> pd.DataFrame:
     ].reset_index(drop=True)
 
 
+def filter_tickets_by_resolution_status(df: pd.DataFrame, status: str) -> pd.DataFrame:
+    """Return tickets matching the selected resolution status, or all tickets when "All" is selected."""
+    status_column = _get_resolution_status_column(df)
+    if df.empty or not status or status == "All" or status_column is None:
+        return df.copy()
+
+    return df[
+        df[status_column].astype(str).str.casefold() == status.casefold()
+    ].reset_index(drop=True)
+
+
 def get_distinct_assignees(df: pd.DataFrame) -> list[str]:
     """Return sorted distinct non-blank Assigned To values found in the dataframe."""
     if df.empty or "Assigned To" not in df.columns:

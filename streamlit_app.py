@@ -41,6 +41,7 @@ try:
         filter_tickets_by_assignee,
         filter_tickets_by_code,
         filter_tickets_by_id,
+        filter_tickets_by_resolution_status,
         get_distinct_assignees,
         get_eastern_us_timestamp,
         sanitize_ticket_dataframe,
@@ -83,6 +84,7 @@ except ImportError:
     filter_tickets_by_assignee = ticket_data_module.filter_tickets_by_assignee
     filter_tickets_by_code = ticket_data_module.filter_tickets_by_code
     filter_tickets_by_id = ticket_data_module.filter_tickets_by_id
+    filter_tickets_by_resolution_status = ticket_data_module.filter_tickets_by_resolution_status
     get_distinct_assignees = ticket_data_module.get_distinct_assignees
     sanitize_ticket_dataframe = ticket_data_module.sanitize_ticket_dataframe
     STAFF_DIRECTORY = ticket_data_module.STAFF_DIRECTORY
@@ -961,15 +963,22 @@ if st.session_state.get("current_view") == "ticket_management":
         unsafe_allow_html=True,
     )
 
-    filter_col, search_col = st.columns([1, 2])
+    filter_col, assignee_col, status_col = st.columns([1, 1, 1])
     with filter_col:
         selected_code = st.selectbox("Filter by code", options=["All", *TICKET_CODES])
-    with search_col:
+    with assignee_col:
         selected_table_assignee = st.selectbox(
             "Filter by assignee", options=["All", *ASSIGNEES], key="table_assignee_filter"
         )
+    with status_col:
+        selected_table_status = st.selectbox(
+            "Filter by resolution status",
+            options=["All", "Pending", "In Process", "Resolved"],
+            key="table_status_filter",
+        )
     filtered_df = filter_tickets_by_assignee(st.session_state.df, selected_table_assignee)
     filtered_df = filter_tickets_by_code(filtered_df, selected_code)
+    filtered_df = filter_tickets_by_resolution_status(filtered_df, selected_table_status)
 
     # Allow the user to delete a ticket by selecting its ID.
     selected_ticket_id = st.selectbox(
