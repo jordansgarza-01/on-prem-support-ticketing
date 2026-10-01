@@ -302,9 +302,9 @@ with header_ism_col:
 
 with header_ticket_mgmt_col:
     with st.container(key="ticket_management_portal"):
-        # No password gate — Ticket Management is open to anyone, like My Tickets.
+        # No password gate — Service Overview is open to anyone, like My Tickets.
         st.button(
-            "Ticket Management",
+            "Service Overview",
             key="tm_open_button",
             on_click=_go_to_view,
             args=("ticket_management",),
@@ -952,7 +952,7 @@ if st.session_state.get("current_view") == "internal_management":
 
 if st.session_state.get("current_view") == "ticket_management":
     st.markdown(
-        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Ticket Management</h1></div>",
+        f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>Service Overview</h1></div>",
         unsafe_allow_html=True,
     )
     st.button("← Back to home screen", key="tm_back_button", on_click=_go_to_view, args=("home",))
@@ -980,78 +980,9 @@ if st.session_state.get("current_view") == "ticket_management":
     filtered_df = filter_tickets_by_code(filtered_df, selected_code)
     filtered_df = filter_tickets_by_resolution_status(filtered_df, selected_table_status)
 
-    # Allow the user to delete a ticket by selecting its ID.
-    selected_ticket_id = st.selectbox(
-        "Delete a ticket",
-        options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
-        index=0,
-        key="delete_ticket_selectbox",
-    )
-
-    if st.button("Delete selected ticket", type="primary") and selected_ticket_id:
-        try:
-            get_ticket_repository().delete_ticket(selected_ticket_id)
-        except Exception as exc:
-            st.error(f"Unable to delete {selected_ticket_id} from Supabase: {exc}")
-            st.stop()
-        st.session_state.df = delete_ticket_by_id(st.session_state.df, selected_ticket_id)
-        st.session_state.ticket_attachments.pop(selected_ticket_id, None)
-        ticket_comment_ids = [
-            c["comment_id"] for c in st.session_state.ticket_comments if c["ticket_id"] == selected_ticket_id
-        ]
-        if ticket_comment_ids:
-            try:
-                get_ticket_repository().delete_comments(ticket_comment_ids)
-            except Exception as exc:
-                st.error(_format_supabase_comment_error(f"delete comments for {selected_ticket_id} from Supabase", exc))
-                st.stop()
-        st.session_state.ticket_comments = [
-            c for c in st.session_state.ticket_comments if c["ticket_id"] != selected_ticket_id
-        ]
-        st.success(f"Deleted {selected_ticket_id}.")
-        st.rerun()
-
-    # Allow the user to change a ticket's resolution status (kept out of the grid below so the
-    # Resolution Status column can stay non-editable there and show its true legend colors).
-    status_ticket_col, status_value_col, status_button_col = st.columns([2, 1, 1])
-    with status_ticket_col:
-        status_ticket_id = st.selectbox(
-            "Update ticket status",
-            options=[""] + list(st.session_state.df["ID"].astype(str)) if not st.session_state.df.empty else [""],
-            index=0,
-            key="update_status_selectbox",
-        )
-    with status_value_col:
-        new_resolution_status = st.selectbox(
-            "New status",
-            options=["Pending", "In Process", "Resolved"],
-            key="update_status_value_selectbox",
-        )
-    with status_button_col:
-        st.write("")
-        st.write("")
-        apply_status_clicked = st.button("Apply status", type="primary")
-
-    if apply_status_clicked and status_ticket_id:
-        ticket_mask = st.session_state.df["ID"].astype(str) == status_ticket_id
-        st.session_state.df.loc[ticket_mask, "Resolution Status"] = new_resolution_status
-        if new_resolution_status.lower() == "resolved":
-            current_date_closed = st.session_state.df.loc[ticket_mask, "Date Closed"].astype(str).str.strip()
-            if (current_date_closed == "").all():
-                st.session_state.df.loc[ticket_mask, "Date Closed"] = get_eastern_us_timestamp()
-        else:
-            st.session_state.df.loc[ticket_mask, "Date Closed"] = ""
-        try:
-            get_ticket_repository().update_ticket(st.session_state.df.loc[ticket_mask].iloc[0].to_dict())
-        except Exception as exc:
-            st.error(f"Unable to update {status_ticket_id} in Supabase: {exc}")
-            st.stop()
-        st.success(f"Updated {status_ticket_id} to {new_resolution_status}.")
-        st.rerun()
-
     # Single color-coded, editable table — edits (including Description) save immediately.
-    # Resolution Status is edited via the "Update ticket status" control above, since data_editor
-    # only applies Styler colors (matching the legend) to non-editable columns.
+    # Resolution Status is view-only here (not editable) — change it via the My Tickets screen's
+    # "Update ticket status" control, since data_editor only applies Styler colors to non-editable columns.
     editor_df = filtered_df.copy()
     if "Date Closed" in editor_df.columns:
         editor_df["Date Closed"] = editor_df["Date Closed"].replace("", " ")
@@ -1149,7 +1080,7 @@ if st.session_state.get("current_view") == "ticket_management":
             ),
             "Resolution Status": st.column_config.TextColumn(
                 "Resolution Status",
-                help="Current resolution status — change it above with 'Update ticket status'",
+                help="Current resolution status (view-only here — change it via the My Tickets screen)",
             ),
             "Due Date": st.column_config.TextColumn(
                 "Due Date",
