@@ -151,7 +151,6 @@ if not st.runtime.exists():
 
 APP_PASSWORD = "Platinum2025"
 INTERNAL_MANAGEMENT_PASSWORD = "ServiceStats01@!"
-TICKET_MANAGEMENT_PASSWORD = "ULSDfuelHC01@$$"
 
 
 # Navigation/login state changes are done via on_click callbacks (run before the script
@@ -175,16 +174,6 @@ def _attempt_internal_management_login() -> None:
         st.session_state.pop("ism_password_input", None)
     else:
         st.session_state.ism_login_error = True
-
-
-def _attempt_ticket_management_login() -> None:
-    if st.session_state.get("tm_password_input", "") == TICKET_MANAGEMENT_PASSWORD:
-        st.session_state.ticket_management_authenticated = True
-        st.session_state.current_view = "ticket_management"
-        st.session_state.tm_login_error = False
-        st.session_state.pop("tm_password_input", None)
-    else:
-        st.session_state.tm_login_error = True
 
 
 def _apply_my_ticket_status_update() -> None:
@@ -311,20 +300,14 @@ with header_ism_col:
 
 with header_ticket_mgmt_col:
     with st.container(key="ticket_management_portal"):
-        if st.session_state.get("ticket_management_authenticated", False):
-            st.button(
-                "Ticket Management",
-                key="tm_open_button",
-                on_click=_go_to_view,
-                args=("ticket_management",),
-                use_container_width=True,
-            )
-        else:
-            with st.popover("Ticket Management", use_container_width=True):
-                st.text_input("Password", type="password", key="tm_password_input")
-                st.button("Log in", key="tm_unlock_button", on_click=_attempt_ticket_management_login)
-                if st.session_state.pop("tm_login_error", False):
-                    st.error("The password you entered is incorrect. Please try again.")
+        # No password gate — Ticket Management is open to anyone, like My Tickets.
+        st.button(
+            "Ticket Management",
+            key="tm_open_button",
+            on_click=_go_to_view,
+            args=("ticket_management",),
+            use_container_width=True,
+        )
 
 st.write("Please use this system to request assistance.")
 

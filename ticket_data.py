@@ -15,8 +15,9 @@ FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-
 TICKET_CODES = ("IT", "CI", "MHE", "Maintenance", "Custodial")
 ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
 
-# Codes not listed here (e.g. "IT") are left unassigned for manual assignment.
+# Used to auto-assign new tickets at creation time by Code; existing tickets are never retroactively reassigned.
 CODE_ASSIGNEE_MAP = {
+    "IT": "Jordan Garza",
     "CI": "Jordan Garza",
     "MHE": "Tanner Bourgeois",
     "Maintenance": "Gary Lewis",
