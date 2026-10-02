@@ -12,14 +12,13 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
-TICKET_CODES = ("IT", "CI", "MHE", "Maintenance", "Custodial")
-ASSIGNEES = ("Jordan Garza", "Tanner Bourgeois", "Gary Lewis")
+TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial")
+ASSIGNEES = ("Jordan Garza", "Gary Lewis")
 
 # Used to auto-assign new tickets at creation time by Code; existing tickets are never retroactively reassigned.
 CODE_ASSIGNEE_MAP = {
     "IT": "Jordan Garza",
     "CI": "Jordan Garza",
-    "MHE": "Tanner Bourgeois",
     "Maintenance": "Gary Lewis",
     "Custodial": "Jordan Garza",
 }
@@ -29,7 +28,6 @@ STAFF_DIRECTORY = (
     "George Dixon",
     "Gerald Radcliff",
     "Tyler Bourgeois",
-    "Tanner Bourgeois",
     "Tim Norris",
     "Jordan Garza",
     "Gary Lewis",
