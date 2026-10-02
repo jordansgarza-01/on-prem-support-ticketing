@@ -74,6 +74,21 @@ def test_sanitize_ticket_dataframe_removes_fake_ticket_ids():
     assert cleaned.iloc[0]["ID"] == "TICKET-1009"
 
 
+def test_sanitize_ticket_dataframe_removes_requested_ticket_and_retired_assignee_tickets():
+    df = pd.DataFrame(
+        [
+            {"ID": "TICKET-665AA366", "Assigned To": "Jordan Garza"},
+            {"ID": "TICKET-2001", "Assigned To": "Tanner Bourgeois"},
+            {"ID": "TICKET-2002", "Assigned To": "  tAnNeR bOuRgEoIs  "},
+            {"ID": "TICKET-2003", "Assigned To": "Gary Lewis"},
+        ]
+    )
+
+    cleaned = sanitize_ticket_dataframe(df)
+
+    assert cleaned["ID"].tolist() == ["TICKET-2003"]
+
+
 def test_sanitize_ticket_dataframe_replaces_empty_close_date_placeholder():
     df = pd.DataFrame(
         [

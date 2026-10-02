@@ -12,6 +12,8 @@ def get_eastern_us_timestamp() -> str:
 
 
 FAKE_TICKET_ID_PREFIXES = ("TICKET-1001", "TICKET-1002", "TICKET-1003", "TICKET-1004", "TICKET-1005", "TICKET-1006", "TICKET-1007", "TICKET-1008")
+REMOVED_TICKET_IDS = {"ticket-665aa366"}
+REMOVED_TICKET_ASSIGNEES = {"tanner bourgeois"}
 TICKET_CODES = ("IT", "CI", "Maintenance", "Custodial")
 ASSIGNEES = ("Jordan Garza", "Gary Lewis")
 
@@ -575,6 +577,19 @@ def sanitize_ticket_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     ticket_ids = df["ID"].fillna("").astype(str)
     cleaned = df[~ticket_ids.str.startswith(FAKE_TICKET_ID_PREFIXES, na=False)].copy()
+    cleaned_ids = cleaned["ID"].fillna("").astype(str).str.strip().str.casefold()
+    removed_ticket_mask = cleaned_ids.isin(REMOVED_TICKET_IDS)
+    if "Assigned To" in cleaned.columns:
+        removed_assignee_mask = (
+            cleaned["Assigned To"]
+            .astype("string")
+            .fillna("")
+            .str.strip()
+            .str.casefold()
+            .isin(REMOVED_TICKET_ASSIGNEES)
+        )
+        removed_ticket_mask |= removed_assignee_mask
+    cleaned = cleaned[~removed_ticket_mask].copy()
     defaults = {
         "Issue": "",
         "Priority": "Medium",
