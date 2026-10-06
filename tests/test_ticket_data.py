@@ -1,17 +1,23 @@
 import pandas as pd
+import pytest
 import streamlit as st
 
+import notifications
 import streamlit_app
+import ticket_data
 from ticket_repository import (
     SupabaseTicketRepository,
     ticket_records_to_dataframe,
     validate_supabase_url,
 )
 from ticket_data import (
+    build_assignee_snapshot_pdf,
     calculate_average_resolution_time_hours,
     calculate_average_closed_tickets_per_week,
     calculate_average_open_tickets_per_week,
     calculate_due_date,
+    calculate_on_time_close_rate,
+    calculate_overdue_ticket_count,
     calculate_resolution_time_trend,
     calculate_stale_open_ticket_flags,
     calculate_urgent_open_ticket_count,
@@ -600,6 +606,106 @@ def test_calculate_resolution_time_trend_excludes_weekends():
     assert trend_df["moving_average"].tolist() == [10.0, 61.6]
 
 
+def test_resolution_trend_attributes_weekend_closures_to_friday_and_ends_weeks_on_fridays():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-3101",
+                "Date Submitted": "2026-08-07 09:00:00 ET",  # Friday
+                "Date Closed": "2026-08-08 10:00:00 ET",  # Saturday
+                "Resolution Status": "Resolved",
+            },
+            {
+                "ID": "TICKET-3102",
+                "Date Submitted": "2026-08-17 09:00:00 ET",
+                "Date Closed": "2026-08-23 10:00:00 ET",  # Sunday
+                "Resolution Status": "Resolved",
+            },
+        ]
+    )
+
+    trend_df = calculate_resolution_time_trend(df)
+
+    assert len(trend_df) == 3  # the week between the two closures is interpolated
+    assert set(trend_df["date"].dt.weekday) == {4}
+    assert trend_df["date"].dt.strftime("%Y-%m-%d").tolist() == ["2026-08-07", "2026-08-14", "2026-08-21"]
+
+
+def test_weekend_close_after_a_weekend_due_date_is_not_counted_late():
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-3201",
+                "Due Date": "2026-08-08 09:00:00 ET",  # Saturday (legacy calendar-day due date)
+                "Date Closed": "2026-08-09 15:00:00 ET",  # Sunday
+                "Resolution Status": "Resolved",
+            },
+            {
+                "ID": "TICKET-3202",
+                "Due Date": "2026-08-07 12:00:00 ET",  # Friday noon
+                "Date Closed": "2026-08-10 09:00:00 ET",  # Monday morning: genuinely late
+                "Resolution Status": "Resolved",
+            },
+        ]
+    )
+
+    assert calculate_on_time_close_rate(df) == 50.0
+
+
+def test_weekends_never_make_an_open_ticket_overdue(monkeypatch):
+    monkeypatch.setattr(
+        ticket_data.pd.Timestamp, "now", staticmethod(lambda: pd.Timestamp("2026-08-09 10:00:00"))  # Sunday
+    )
+    df = pd.DataFrame(
+        [
+            {"ID": "TICKET-3301", "Due Date": "2026-08-08 12:00:00 ET", "Resolution Status": "Pending"},
+            {"ID": "TICKET-3302", "Due Date": "2026-08-07 12:00:00 ET", "Resolution Status": "Pending"},
+        ]
+    )
+
+    # The Saturday-due ticket gets until the end of Friday; only the Friday-noon one is overdue.
+    assert calculate_overdue_ticket_count(df) == 1
+
+
+def test_snapshot_pdf_table_headers_wrap_inside_their_columns(monkeypatch):
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Table
+
+    captured = {}
+    original_build = SimpleDocTemplate.build
+
+    def capture_build(self, flowables, *args, **kwargs):
+        # reportlab rewrites table cells while building, so grab them first.
+        if "header_cells" not in captured:
+            stats_table = next(item for item in flowables if isinstance(item, Table))
+            captured["header_cells"] = list(stats_table._cellvalues[0])
+            captured["col_widths"] = list(stats_table._colWidths)
+        return original_build(self, flowables, *args, **kwargs)
+
+    monkeypatch.setattr(SimpleDocTemplate, "build", capture_build)
+    df = pd.DataFrame(
+        [
+            {
+                "ID": "TICKET-3401", "Code": "IT", "Priority": "Low", "Assigned To": "Jordan Garza",
+                "Date Submitted": "2026-08-03 09:00:00 ET", "Due Date": "2026-08-12 09:00:00 ET",
+                "Date Closed": "2026-08-04 09:00:00 ET", "Resolution Status": "Resolved",
+            }
+        ]
+    )
+
+    pdf_bytes = build_assignee_snapshot_pdf(df, "Jordan Garza")
+
+    assert pdf_bytes.startswith(b"%PDF")
+    header_cells, col_widths = captured["header_cells"], captured["col_widths"]
+    assert all(isinstance(cell, Paragraph) for cell in header_cells)
+    padding = 12
+    for cell, column_width in zip(header_cells, col_widths):
+        cell.wrap(column_width - padding, 1000)
+        assert max(cell.getActualLineWidths0()) <= column_width - padding
+    multi_line = [cell for cell in header_cells if len(cell.getActualLineWidths0()) > 1]
+    assert len(multi_line) >= 4  # Urgent Open, Resolution Rate, Avg Resolution, On-Time Close wrap
+    assert sum(col_widths) <= 468  # fits the portrait letter frame
+
+
 def test_calculate_stale_open_ticket_flags_counts_only_business_days(monkeypatch):
     import ticket_data
 
@@ -849,12 +955,17 @@ def test_my_tickets_status_update_persists_without_corrupting_ticket_row(monkeyp
     st.session_state.clear()
     try:
         st.session_state["df"] = tickets.copy()
-        st.session_state["my_tickets_person"] = "Gary Lewis"
+        st.session_state["user_name"] = "Gary Lewis"
         st.session_state["my_tickets_update_status_selectbox"] = "TICKET-1"
         st.session_state["my_tickets_update_status_value_selectbox"] = "Resolved"
 
+        notified = []
+        monkeypatch.setattr(
+            streamlit_app, "_notify_ticket_submitter", lambda ticket, lines: notified.append((ticket["ID"], list(lines)))
+        )
         streamlit_app._apply_my_ticket_status_update()
 
+        assert notified == [("TICKET-1", ["Status changed from Pending to Resolved"])]
         assert "my_tickets_status_error" not in st.session_state
         assert st.session_state["my_tickets_status_success"] == "Updated TICKET-1 to Resolved."
 
@@ -902,7 +1013,7 @@ def test_my_tickets_status_update_rejects_ticket_not_owned_by_person(monkeypatch
     st.session_state.clear()
     try:
         st.session_state["df"] = tickets.copy()
-        st.session_state["my_tickets_person"] = "Gary Lewis"
+        st.session_state["user_name"] = "Gary Lewis"
         st.session_state["my_tickets_update_status_selectbox"] = "TICKET-2"
         st.session_state["my_tickets_update_status_value_selectbox"] = "Resolved"
 
@@ -916,6 +1027,124 @@ def test_my_tickets_status_update_rejects_ticket_not_owned_by_person(monkeypatch
         assert st.session_state["df"].set_index("ID").loc["TICKET-2", "Resolution Status"] == "Pending"
     finally:
         st.session_state.clear()
+
+
+def test_status_update_requires_a_signed_in_account(monkeypatch):
+    monkeypatch.setattr(
+        streamlit_app, "get_ticket_repository", lambda: pytest.fail("must not write without a signed-in user")
+    )
+    st.session_state.clear()
+    try:
+        # A ticket with a blank Assigned To must not match a blank (signed-out) name.
+        st.session_state["df"] = pd.DataFrame(
+            [{"ID": "TICKET-1", "Submitted By": "Gary Lewis", "Assigned To": "", "Date Closed": "",
+              "Resolution Status": "Pending"}]
+        )
+        st.session_state["my_tickets_update_status_selectbox"] = "TICKET-1"
+        st.session_state["my_tickets_update_status_value_selectbox"] = "Resolved"
+
+        streamlit_app._apply_my_ticket_status_update()
+
+        assert st.session_state["my_tickets_status_error"] == "Sign in to update tickets."
+        assert st.session_state["df"].loc[0, "Resolution Status"] == "Pending"
+    finally:
+        st.session_state.clear()
+
+
+def test_my_tickets_portal_always_opens_for_the_signed_in_account():
+    st.session_state.clear()
+    try:
+        st.session_state["user_name"] = "Gary Lewis"
+        st.session_state["my_tickets_person"] = "Jordan Garza"  # e.g. tampered/stale value
+
+        streamlit_app._open_my_tickets()
+
+        assert st.session_state["my_tickets_person"] == "Gary Lewis"
+        assert st.session_state["current_view"] == "my_tickets"
+    finally:
+        st.session_state.clear()
+
+
+def test_log_out_clears_the_whole_session():
+    st.session_state.clear()
+    st.session_state.update(
+        {"authenticated": True, "user_email": "gary.lewis@owens-minor.com", "user_name": "Gary Lewis", "df": 1}
+    )
+
+    streamlit_app._log_out()
+
+    assert dict(st.session_state) == {}
+
+
+@pytest.fixture
+def sent_emails(monkeypatch):
+    sent = []
+    settings = notifications.EmailSettings(
+        host="smtp.example.com", port=587, username="svc", password="pw",
+        sender="support@owens-minor.com", app_url="https://app.example.com",
+    )
+    monkeypatch.setattr(
+        notifications.EmailSettings, "from_mapping", classmethod(lambda cls, mapping: settings)
+    )
+    monkeypatch.setattr(
+        notifications, "send_email",
+        lambda settings, to, subject, text, page, **kwargs: sent.append((to, subject, text, page)),
+    )
+    st.session_state.clear()
+    st.session_state["user_name"] = "Jordan Garza"
+    yield sent
+    st.session_state.clear()
+
+
+def test_ticket_submitter_gets_a_branded_update_email_at_their_corporate_address(sent_emails):
+    ticket = {"ID": "TICKET-77", "Issue": "VPN down", "Submitted By": "Gary Lewis", "Resolution Status": "Resolved"}
+
+    streamlit_app._notify_ticket_submitter(ticket, ["Status changed from Pending to Resolved"])
+
+    (to, subject, text, page), = sent_emails
+    assert to == "gary.lewis@owens-minor.com"
+    assert "TICKET-77" in subject and "Jordan Garza" in text
+    assert "https://app.example.com" in page and notifications.BRAND_BURGUNDY in page
+
+
+def test_no_email_is_sent_when_the_submitter_has_no_corporate_address_or_nothing_changed(sent_emails):
+    streamlit_app._notify_ticket_submitter({"ID": "T-1", "Submitted By": "Unknown"}, ["Updated"])
+    streamlit_app._notify_ticket_submitter({"ID": "T-1", "Submitted By": "Gary Lewis"}, [])
+
+    assert sent_emails == []
+
+
+def test_failed_notification_never_blocks_the_update_but_warns_the_user(monkeypatch, sent_emails):
+    def boom(*args, **kwargs):
+        raise OSError("smtp down")
+
+    monkeypatch.setattr(notifications, "send_email", boom)
+
+    streamlit_app._notify_ticket_submitter({"ID": "T-1", "Submitted By": "Gary Lewis"}, ["Updated"])
+
+    assert "gary.lewis@owens-minor.com" in st.session_state["notification_warning"]
+
+
+def test_comments_and_replies_notify_the_ticket_submitter(sent_emails):
+    st.session_state["df"] = pd.DataFrame(
+        [{"ID": "TICKET-9", "Issue": "Badge", "Submitted By": "Gary Lewis", "Resolution Status": "Pending"}]
+    )
+
+    streamlit_app._notify_comment("TICKET-9", "Tim Norris", "Try restarting it", is_reply=False)
+    streamlit_app._notify_comment("TICKET-9", "Tim Norris", "Thanks!", is_reply=True)
+    streamlit_app._notify_comment("TICKET-404", "Tim Norris", "orphan", is_reply=False)
+
+    assert [email[0] for email in sent_emails] == ["gary.lewis@owens-minor.com"] * 2
+    assert 'Tim Norris commented: "Try restarting it"' in sent_emails[0][2]
+    assert 'Tim Norris replied: "Thanks!"' in sent_emails[1][2]
+
+
+def test_field_change_descriptions_cover_set_cleared_and_changed_values():
+    describe = streamlit_app._describe_field_change
+
+    assert describe("Notes", "", "Called vendor") == "Notes set to: Called vendor"
+    assert describe("Notes", "Called vendor", None) == "Notes cleared (was: Called vendor)"
+    assert describe("Priority", "Low", "High") == 'Priority changed from "Low" to "High"'
 
 
 def test_get_github_models_token_uses_streamlit_secrets(monkeypatch):

@@ -69,6 +69,15 @@ def ticket_row_to_record(ticket: Mapping[str, Any]) -> dict[str, str]:
     return record
 
 
+USER_COLUMNS = (
+    "email",
+    "password_hash",
+    "failed_attempts",
+    "locked_until",
+    "reset_token_hash",
+    "reset_token_expires",
+)
+
 COMMENT_DISPLAY_TO_DATABASE_COLUMNS = {
     "comment_id": "id",
     "parent_id": "parent_id",
@@ -155,3 +164,13 @@ class SupabaseTicketRepository:
         if not comment_ids:
             return
         self._client.table("ticket_comments").delete().in_("id", list(comment_ids)).execute()
+
+    def get_user(self, email: str) -> dict[str, Any] | None:
+        response = self._client.table("app_users").select("*").eq("email", email).limit(1).execute()
+        rows = response.data or []
+        return dict(rows[0]) if rows else None
+
+    def save_user(self, user: Mapping[str, Any]) -> None:
+        record = {column: user.get(column) for column in USER_COLUMNS}
+        record["failed_attempts"] = int(record["failed_attempts"] or 0)
+        self._client.table("app_users").upsert(record, on_conflict="email").execute()

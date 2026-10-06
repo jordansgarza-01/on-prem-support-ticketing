@@ -1,4 +1,5 @@
 import datetime as dt
+import math
 from pathlib import Path
 
 import numpy as np
@@ -159,6 +160,24 @@ def _business_hours_series(start: pd.Series, end: pd.Series) -> pd.Series:
     )
 
 
+def _collapse_weekend_to_friday(timestamps: pd.Series) -> pd.Series:
+    """Map Saturday/Sunday timestamps to 23:59:59 of the preceding Friday so weekend days add
+    no elapsed time and can never count against anyone; weekday timestamps and NaT pass through."""
+    weekday = timestamps.dt.weekday
+    is_weekend = weekday >= 5
+    friday_end = (
+        timestamps.dt.normalize()
+        - pd.to_timedelta(weekday - 4, unit="D")
+        + pd.Timedelta(hours=23, minutes=59, seconds=59)
+    )
+    return timestamps.mask(is_weekend, friday_end)
+
+
+def _business_now() -> pd.Timestamp:
+    """Current time, collapsed to Friday end-of-day on weekends so weekends never make tickets overdue."""
+    return _collapse_weekend_to_friday(pd.Series([pd.Timestamp.now()])).iloc[0]
+
+
 def _business_days_elapsed(start: pd.Series, end: pd.Series) -> pd.Series:
     """Return whole business days (Mon-Fri) elapsed between start and end, skipping
     weekends entirely, as a float Series (NaN where either date is missing)."""
@@ -246,19 +265,19 @@ def calculate_past_due_labels(df: pd.DataFrame, days: int = 7) -> pd.Series:
 
 
 def calculate_overdue_ticket_count(df: pd.DataFrame) -> int:
-    """Return the count of unresolved tickets whose Due Date has already passed."""
+    """Return the count of unresolved tickets whose Due Date has already passed (business time only)."""
     status_column = _get_resolution_status_column(df)
     if df.empty or status_column is None or "Due Date" not in df.columns:
         return 0
 
-    due_dates = _parse_date_column(df, "Due Date")
+    due_dates = _collapse_weekend_to_friday(_parse_date_column(df, "Due Date"))
     is_open = df[status_column].astype(str).str.lower() != "resolved"
-    is_past_due = due_dates.notna() & (due_dates < pd.Timestamp.now())
+    is_past_due = due_dates.notna() & (due_dates < _business_now())
     return int((is_open & is_past_due).sum())
 
 
 def calculate_on_time_close_rate(df: pd.DataFrame) -> float:
-    """Return the percentage of resolved tickets closed on or before their Due Date."""
+    """Return the percentage of resolved tickets closed on or before their Due Date (business time only)."""
     status_column = _get_resolution_status_column(df)
     if (
         df.empty
@@ -269,8 +288,8 @@ def calculate_on_time_close_rate(df: pd.DataFrame) -> float:
         return 0.0
 
     is_resolved = df[status_column].astype(str).str.lower() == "resolved"
-    due_dates = _parse_date_column(df, "Due Date")
-    closed_dates = _parse_date_column(df, "Date Closed")
+    due_dates = _collapse_weekend_to_friday(_parse_date_column(df, "Due Date"))
+    closed_dates = _collapse_weekend_to_friday(_parse_date_column(df, "Date Closed"))
     eligible = is_resolved & due_dates.notna() & closed_dates.notna()
     if not eligible.any():
         return 0.0
@@ -295,7 +314,7 @@ def calculate_daily_average_resolution_time_hours(df: pd.DataFrame) -> pd.Series
     valid = closed_dates.notna() & resolution_hours.notna() & (resolution_hours >= 0)
     if not valid.any():
         return pd.Series(dtype="float64")
-    day_index = closed_dates[valid].dt.normalize()
+    day_index = _collapse_weekend_to_friday(closed_dates[valid]).dt.normalize()
     return pd.Series(resolution_hours[valid].to_numpy(), index=day_index).groupby(level=0).mean().sort_index()
 
 
@@ -319,7 +338,7 @@ def calculate_resolution_time_trend(df: pd.DataFrame) -> pd.DataFrame:
     daily_series = daily_series.reindex(business_day_index).interpolate(limit_direction="both")
     moving_average = daily_series.rolling(window="7D", min_periods=1).mean()
 
-    weekly_moving_average = moving_average.resample("W").last().dropna()
+    weekly_moving_average = moving_average.resample("W-FRI").last().dropna()
     return pd.DataFrame(
         {"date": weekly_moving_average.index, "moving_average": weekly_moving_average.to_numpy()}
     ).reset_index(drop=True)
@@ -385,6 +404,11 @@ def _build_performance_trend_drawing(
             return ""
 
     plot.xValueAxis.labelTextFormat = _format_week_end_date
+    # Tick/grid lines only at the plotted week-end (Friday) dates — never on weekend days.
+    week_end_ticks = [point[0] for point in moving_average_series]
+    if len(week_end_ticks) > 8:
+        week_end_ticks = week_end_ticks[:: math.ceil(len(week_end_ticks) / 8)]
+    plot.xValueAxis.valueSteps = week_end_ticks
     plot.xValueAxis.labels.angle = 30
     plot.xValueAxis.labels.dy = -8
     plot.yValueAxis.labelTextFormat = "%0.1f"
@@ -438,14 +462,21 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
 
     assignee_tickets = filter_tickets_by_assignee(df, assignee)
     elements.append(Paragraph("Descriptive Statistics", centered_heading_style))
+    header_style = ParagraphStyle(
+        "StatsHeader", parent=styles["Normal"], fontName="Helvetica-Bold", fontSize=8,
+        leading=10, alignment=TA_CENTER, textColor=colors.white,
+    )
     header = [
-        "Code",
-        "Open",
-        "Urgent Open",
-        "Resolution Rate %",
-        "Avg Resolution (hrs)",
-        "Overdue",
-        "On-Time Close %",
+        Paragraph(label, header_style)
+        for label in (
+            "Code",
+            "Open",
+            "Urgent<br/>Open",
+            "Resolution<br/>Rate %",
+            "Avg Resolution<br/>(hrs)",
+            "Overdue",
+            "On-Time<br/>Close %",
+        )
     ]
     table_rows = [header]
     for code_name in TICKET_CODES:
@@ -464,17 +495,21 @@ def build_assignee_snapshot_pdf(df: pd.DataFrame, assignee: str) -> bytes:
 
     # Explicit widths (points) summing well under the usable page width (letter
     # portrait, ~468pt between default 1" margins) so the table never bleeds off
-    # the page; hAlign centers it within that usable width.
-    table = Table(table_rows, repeatRows=1, colWidths=[50, 45, 65, 75, 80, 55, 80], hAlign="CENTER")
+    # the page; hAlign centers it within that usable width. Header labels wrap onto two
+    # lines inside these widths, with extra vertical padding so they never look cramped.
+    table = Table(table_rows, repeatRows=1, colWidths=[52, 48, 60, 70, 88, 56, 70], hAlign="CENTER")
     table.setStyle(
         TableStyle(
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#7A1F2D")),
-                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("TOPPADDING", (0, 0), (-1, 0), 7),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 7),
+                ("VALIGN", (0, 0), (-1, 0), "MIDDLE"),
+                ("FONTSIZE", (0, 1), (-1, -1), 9),
+                ("TOPPADDING", (0, 1), (-1, -1), 5),
+                ("BOTTOMPADDING", (0, 1), (-1, -1), 5),
                 ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("VALIGN", (0, 1), (-1, -1), "MIDDLE"),
                 ("ALIGN", (0, 0), (-1, -1), "CENTER"),
                 (
                     "ROWBACKGROUNDS",
