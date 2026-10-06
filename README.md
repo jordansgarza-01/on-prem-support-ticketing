@@ -40,13 +40,3 @@ One-time setup:
    SMTP_FROM = "support@owens-minor.com"
    APP_BASE_URL = "https://on-prem-support-ticketing.streamlit.app"
    ```
-
-Until e-mail is configured (or to help someone directly), an administrator with the Supabase service key can
-manage accounts from a terminal, with no e-mail needed:
-
-```
-$ python manage_accounts.py set-password jordan.garza@owens-minor.com   # prompts for the password
-$ python manage_accounts.py reset-link   jordan.garza@owens-minor.com   # one-time link to hand over
-$ python manage_accounts.py unlock       jordan.garza@owens-minor.com
-$ python manage_accounts.py status       jordan.garza@owens-minor.com
-```
