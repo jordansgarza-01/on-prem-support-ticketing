@@ -90,8 +90,6 @@ except ImportError:
     STAFF_DIRECTORY = ticket_data_module.STAFF_DIRECTORY
     TICKET_CODES = ticket_data_module.TICKET_CODES
 
-import auth
-import notifications
 from ticket_repository import SupabaseTicketRepository, validate_supabase_url
 
 # Show app title and description.
@@ -153,98 +151,8 @@ st.markdown(
 if not st.runtime.exists():
     st.session_state.setdefault("_headless_runtime", True)
 
+APP_PASSWORD = "Platinum2025"
 INTERNAL_MANAGEMENT_PASSWORD = "ServiceStats01@!"
-
-# Bump this whenever SupabaseTicketRepository's public interface changes, so the
-# cached resource below is rebuilt instead of reusing a stale pre-change instance.
-_TICKET_REPOSITORY_VERSION = 3
-
-
-@st.cache_resource(show_spinner=False)
-def get_ticket_repository(repository_version: int = _TICKET_REPOSITORY_VERSION) -> SupabaseTicketRepository:
-    """Create the server-side Supabase repository from Streamlit secrets."""
-    try:
-        from supabase import create_client
-
-        return SupabaseTicketRepository(
-            create_client(
-                validate_supabase_url(st.secrets["SUPABASE_URL"]),
-                st.secrets["SUPABASE_SERVICE_ROLE_KEY"],
-            )
-        )
-    except KeyError as exc:
-        raise RuntimeError(
-            "Supabase is not configured. Add SUPABASE_URL and "
-            "SUPABASE_SERVICE_ROLE_KEY to Streamlit secrets."
-        ) from exc
-
-
-def _send_account_email(builder, email: str, name: str, token: str) -> bool:
-    settings = notifications.EmailSettings.from_mapping(st.secrets)
-    subject, text_body, html_body = builder(settings.app_url, name, email, token)
-    notifications.send_email(settings, email, subject, text_body, html_body)
-    return True
-
-
-def _send_reset_email(email: str, name: str, token: str) -> bool:
-    return _send_account_email(notifications.build_reset_email, email, name, token)
-
-
-def _send_lockout_email(email: str, name: str, token: str) -> bool:
-    return _send_account_email(notifications.build_lockout_email, email, name, token)
-
-
-def _account_service() -> auth.AccountService:
-    return auth.AccountService(get_ticket_repository(), _send_reset_email, _send_lockout_email)
-
-
-def _notify_ticket_submitter(ticket, update_lines: list[str]) -> None:
-    """E-mail the person who submitted `ticket` a branded summary of its latest update."""
-    recipient = auth.email_for_name(ticket.get("Submitted By"))
-    if not recipient or not update_lines:
-        return
-    try:
-        settings = notifications.EmailSettings.from_mapping(st.secrets)
-        subject, text_body, html_body = notifications.build_ticket_update_email(
-            settings.app_url,
-            str(ticket.get("Submitted By")),
-            ticket,
-            update_lines,
-            st.session_state.get("user_name") or "The support team",
-            get_eastern_us_timestamp(),
-        )
-        notifications.send_email(settings, recipient, subject, text_body, html_body)
-    except Exception:
-        st.session_state.notification_warning = (
-            f"The ticket was updated, but the e-mail notification to {recipient} could not be sent."
-        )
-
-
-def _cell_text(value) -> str:
-    return "" if value is None or pd.isna(value) else str(value).strip()
-
-
-def _describe_field_change(label: str, old, new) -> str:
-    old_text, new_text = _cell_text(old), _cell_text(new)
-
-    def shorten(text: str) -> str:
-        return text if len(text) <= 200 else text[:197] + "..."
-
-    if not old_text:
-        return f"{label} set to: {shorten(new_text)}"
-    if not new_text:
-        return f"{label} cleared (was: {shorten(old_text)})"
-    return f'{label} changed from "{shorten(old_text)}" to "{shorten(new_text)}"'
-
-
-def _notify_comment(ticket_id: str, author: str, text: str, is_reply: bool) -> None:
-    matches = st.session_state.df[st.session_state.df["ID"].astype(str) == str(ticket_id)]
-    if matches.empty:
-        return
-    snippet = text if len(text) <= 300 else text[:297] + "..."
-    _notify_ticket_submitter(
-        matches.iloc[0], [f'{author} {"replied" if is_reply else "commented"}: "{snippet}"']
-    )
 
 
 # Navigation/login state changes are done via on_click callbacks (run before the script
@@ -260,16 +168,6 @@ def _go_home_from_my_tickets() -> None:
     st.session_state.pop("my_tickets_person_selectbox", None)
 
 
-def _open_my_tickets() -> None:
-    # A person can only ever open their own portal: the name comes from the signed-in account.
-    st.session_state.my_tickets_person = st.session_state.get("user_name")
-    st.session_state.current_view = "my_tickets"
-
-
-def _log_out() -> None:
-    st.session_state.clear()
-
-
 def _attempt_internal_management_login() -> None:
     if st.session_state.get("ism_password_input", "") == INTERNAL_MANAGEMENT_PASSWORD:
         st.session_state.internal_management_authenticated = True
@@ -283,10 +181,7 @@ def _attempt_internal_management_login() -> None:
 def _apply_my_ticket_status_update() -> None:
     ticket_id = st.session_state.get("my_tickets_update_status_selectbox", "")
     new_status = st.session_state.get("my_tickets_update_status_value_selectbox", "")
-    current_person = st.session_state.get("user_name", "")
-    if not current_person:
-        st.session_state.my_tickets_status_error = "Sign in to update tickets."
-        return
+    current_person = st.session_state.get("my_tickets_person", "")
     if not ticket_id or new_status not in ("Pending", "In Process", "Resolved"):
         st.session_state.my_tickets_status_error = "Select a ticket and status first."
         return
@@ -320,129 +215,28 @@ def _apply_my_ticket_status_update() -> None:
         return
 
     ticket_row_index = tickets.index[ticket_mask][0]
-    previous_status = str(tickets.at[ticket_row_index, "Resolution Status"])
     st.session_state.df.at[ticket_row_index, "Resolution Status"] = new_status
     st.session_state.df.at[ticket_row_index, "Date Closed"] = ticket["Date Closed"]
     st.session_state.my_tickets_status_success = f"Updated {ticket_id} to {new_status}."
     st.session_state.pop("my_tickets_status_error", None)
-    _notify_ticket_submitter(ticket, [f"Status changed from {previous_status} to {new_status}"])
 
 
-def _query_param(name: str) -> str:
-    try:
-        value = st.query_params.get(name, "")
-    except Exception:
-        return ""
-    return value if isinstance(value, str) else (value[0] if value else "")
-
-
-def _clear_query_params() -> None:
-    try:
-        st.query_params.clear()
-    except Exception:
-        pass
-
-
-def _complete_login(result: auth.AuthResult) -> None:
-    st.session_state.authenticated = True
-    st.session_state.user_email = result.email
-    st.session_state.user_name = result.name
-    st.session_state.current_view = "home"
-    _clear_query_params()
-    st.rerun()
-
-
-def _render_set_password_form(token: str, email: str) -> None:
-    st.subheader("Set your password")
-    st.caption(auth.PASSWORD_REQUIREMENTS_TEXT)
-    with st.form("set_password_form"):
-        st.text_input("E-mail", value=email, disabled=True)
-        new_password = st.text_input("New password", type="password", key="set_password_new")
-        confirm_password = st.text_input("Confirm new password", type="password", key="set_password_confirm")
-        submitted = st.form_submit_button("Save password", type="primary")
-    st.button("Back to log in", key="back_to_login_button", on_click=_clear_query_params)
-    if not submitted:
-        return
-    if new_password != confirm_password:
-        st.error("The two passwords don't match.")
-        return
-    try:
-        result = _account_service().complete_password_reset(email, token, new_password)
-    except Exception as exc:
-        st.error(f"Password reset is unavailable: {exc}")
-        return
-    if result.ok:
-        _clear_query_params()
-        st.session_state.password_updated_notice = True
-        st.rerun()
-    st.error(result.message)
-    for problem in result.problems:
-        st.markdown(f"- {problem}")
-
-
-def _render_login_screen() -> None:
+if not st.session_state.get("authenticated", False):
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY};'>P&HS | Internal Support Portal</h1></div>",
         unsafe_allow_html=True,
     )
-    reset_token = _query_param("reset_token")
-    if reset_token:
-        _render_set_password_form(reset_token, auth.normalize_email(_query_param("email")))
-        return
-
-    if st.session_state.pop("password_updated_notice", False):
-        st.success("Your password was saved. Log in below.")
-    login_tab, reset_tab = st.tabs(["Log in", "First time or forgot password?"])
-    with login_tab:
-        with st.form("login_form"):
-            login_email = st.text_input(
-                "Owens & Minor e-mail", placeholder="firstname.lastname@owens-minor.com", key="login_email"
-            )
-            login_password = st.text_input("Password", type="password", key="login_password")
-            login_submitted = st.form_submit_button("Log in", type="primary")
-        if login_submitted:
-            try:
-                login_result = _account_service().authenticate(login_email, login_password)
-            except Exception as exc:
-                st.error(f"Sign-in is unavailable: {exc}")
-            else:
-                if login_result.ok:
-                    _complete_login(login_result)
-                st.error(login_result.message)
-    with reset_tab:
-        st.write(
-            "Enter your Owens & Minor e-mail address and we'll send you a secure, single-use link "
-            "to set or reset your password."
-        )
-        with st.form("reset_request_form"):
-            reset_email = st.text_input(
-                "Owens & Minor e-mail", placeholder="firstname.lastname@owens-minor.com", key="reset_request_email"
-            )
-            reset_submitted = st.form_submit_button("E-mail me a link")
-        if reset_submitted:
-            try:
-                notifications.EmailSettings.from_mapping(st.secrets)
-            except notifications.EmailNotConfiguredError:
-                st.error("E-mail delivery isn't configured yet. Please contact an administrator.")
-            else:
-                try:
-                    reset_result = _account_service().request_password_reset(reset_email)
-                except Exception as exc:
-                    st.error(f"Password reset is unavailable: {exc}")
-                else:
-                    (st.success if reset_result.ok else st.error)(reset_result.message)
-
-
-if not st.session_state.get("authenticated", False):
-    _render_login_screen()
+    entered_password = st.text_input("Password", type="password")
+    login_clicked = st.button("Log in", type="primary")
+    if login_clicked:
+        if entered_password == APP_PASSWORD:
+            st.session_state.authenticated = True
+            st.rerun()
+        else:
+            st.error("The password you entered is incorrect. Please try again.")
     st.stop()
 
 st.session_state.setdefault("current_view", "home")
-user_email = st.session_state.get("user_email", "")
-user_name = st.session_state.get("user_name", "")
-is_management_user = auth.is_management_email(user_email)
-if st.session_state.current_view in ("internal_management", "ticket_management") and not is_management_user:
-    st.session_state.current_view = "home"
 
 st.markdown(
     f"<div style='padding: 0.5rem 0 1rem 0;'><h1 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 2rem; margin: 0; color: {DEEP_BURGUNDY}; white-space: nowrap; overflow-x: auto;'>P&HS | Internal Support Portal</h1></div>",
@@ -470,52 +264,78 @@ st.markdown(
     header_my_tickets_col,
     header_ism_col,
     header_ticket_mgmt_col,
-    header_logout_col,
+    header_spacer_right,
 ) = st.columns([1.6, 2.7, 2.2, 1.3])
 
 with header_my_tickets_col:
     with st.container(key="my_tickets_portal"):
-        st.button("My Tickets", key="my_tickets_open_button", on_click=_open_my_tickets, use_container_width=True)
+        with st.popover("My Tickets", use_container_width=True):
+            selected_my_tickets_person = st.selectbox(
+                "Select your name to view My Tickets",
+                ["-- Select your name --", *STAFF_DIRECTORY],
+                key="my_tickets_person_selectbox",
+            )
+            if selected_my_tickets_person != "-- Select your name --":
+                st.session_state.my_tickets_person = selected_my_tickets_person
+                st.session_state.current_view = "my_tickets"
+                del st.session_state["my_tickets_person_selectbox"]
+                st.rerun()
 
-# Service Overview and Performance Management are only offered to the management accounts.
-if is_management_user:
-    with header_ism_col:
-        with st.container(key="internal_management_portal"):
-            if st.session_state.get("internal_management_authenticated", False):
-                # A plain top-level button (not nested inside a popover) so the click is a
-                # single, unambiguous interaction — re-entry doesn't need the password gate.
-                st.button(
-                    "Performance Management",
-                    key="ism_open_button",
-                    on_click=_go_to_view,
-                    args=("internal_management",),
-                    use_container_width=True,
-                )
-            else:
-                with st.popover("Performance Management", use_container_width=True):
-                    st.text_input("Password", type="password", key="ism_password_input")
-                    st.button("Log in", key="ism_unlock_button", on_click=_attempt_internal_management_login)
-                    if st.session_state.pop("ism_login_error", False):
-                        st.error("The password you entered is incorrect. Please try again.")
-
-    with header_ticket_mgmt_col:
-        with st.container(key="ticket_management_portal"):
+with header_ism_col:
+    with st.container(key="internal_management_portal"):
+        if st.session_state.get("internal_management_authenticated", False):
+            # A plain top-level button (not nested inside a popover) so the click is a
+            # single, unambiguous interaction — re-entry doesn't need the password gate.
             st.button(
-                "Service Overview",
-                key="tm_open_button",
+                "Performance Management",
+                key="ism_open_button",
                 on_click=_go_to_view,
-                args=("ticket_management",),
+                args=("internal_management",),
                 use_container_width=True,
             )
+        else:
+            with st.popover("Performance Management", use_container_width=True):
+                st.text_input("Password", type="password", key="ism_password_input")
+                st.button("Log in", key="ism_unlock_button", on_click=_attempt_internal_management_login)
+                if st.session_state.pop("ism_login_error", False):
+                    st.error("The password you entered is incorrect. Please try again.")
 
-with header_logout_col:
-    st.button("Log out", key="logout_button", on_click=_log_out, use_container_width=True)
-
-st.caption(f"Signed in as {user_name} ({user_email})")
-if notification_warning := st.session_state.pop("notification_warning", None):
-    st.warning(notification_warning)
+with header_ticket_mgmt_col:
+    with st.container(key="ticket_management_portal"):
+        # No password gate — Service Overview is open to anyone, like My Tickets.
+        st.button(
+            "Service Overview",
+            key="tm_open_button",
+            on_click=_go_to_view,
+            args=("ticket_management",),
+            use_container_width=True,
+        )
 
 st.write("Please use this system to request assistance.")
+
+# Bump this whenever SupabaseTicketRepository's public interface changes, so the
+# cached resource below is rebuilt instead of reusing a stale pre-change instance.
+_TICKET_REPOSITORY_VERSION = 2
+
+
+@st.cache_resource(show_spinner=False)
+def get_ticket_repository(repository_version: int = _TICKET_REPOSITORY_VERSION) -> SupabaseTicketRepository:
+    """Create the server-side Supabase repository from Streamlit secrets."""
+    try:
+        from supabase import create_client
+
+        return SupabaseTicketRepository(
+            create_client(
+                validate_supabase_url(st.secrets["SUPABASE_URL"]),
+                st.secrets["SUPABASE_SERVICE_ROLE_KEY"],
+            )
+        )
+    except KeyError as exc:
+        raise RuntimeError(
+            "Supabase is not configured. Add SUPABASE_URL and "
+            "SUPABASE_SERVICE_ROLE_KEY to Streamlit secrets."
+        ) from exc
+
 
 # Create the shared ticket dataframe and refresh it for each browser session.
 TICKET_DATA_VERSION = 5
@@ -644,8 +464,7 @@ def _apply_rag_styling(df: pd.DataFrame):
     ).apply(_style_past_due_col, subset=[_PAST_DUE_FLAG_COLUMN], axis=0)
 
 
-# A portal always belongs to the signed-in account — never to a name chosen in the browser.
-my_tickets_person = user_name
+my_tickets_person = st.session_state.get("my_tickets_person")
 if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
     st.markdown(
         f"<div style='padding: 0.5rem 0 1rem 0;'><h2 style='font-family: Helvetica, Arial, sans-serif; font-weight: 700; font-size: 1.6rem; margin: 0; color: {DEEP_BURGUNDY};'>My Tickets — {my_tickets_person}</h2></div>",
@@ -705,15 +524,11 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
             if new_notes != original_notes:
                 df_mask = st.session_state.df["ID"].astype(str) == ticket_id
                 st.session_state.df.loc[df_mask, "Notes"] = new_notes
-                updated_ticket = st.session_state.df.loc[df_mask].iloc[0]
                 try:
-                    get_ticket_repository().update_ticket(updated_ticket.to_dict())
+                    get_ticket_repository().update_ticket(st.session_state.df.loc[df_mask].iloc[0].to_dict())
                 except Exception as exc:
                     st.error(f"Unable to update {ticket_id} in Supabase: {exc}")
                     st.stop()
-                _notify_ticket_submitter(
-                    updated_ticket, [_describe_field_change("Notes", original_notes, new_notes)]
-                )
                 notes_updated = True
         if notes_updated:
             st.rerun()
@@ -842,9 +657,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
         key="comment_ticket_selectbox",
     )
 
-    comment_username = st.text_input(
-        "Your name", value=user_name, placeholder="Enter your name", key="comment_username"
-    )
+    comment_username = st.text_input("Your name", placeholder="Enter your name", key="comment_username")
     comment_text = st.text_area("Comment", placeholder="Ask a question or post an update…", key="comment_text")
 
     if st.button("Post comment", type="primary"):
@@ -870,7 +683,6 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
                 st.error(_format_supabase_comment_error("save comment to Supabase", exc))
                 st.stop()
             st.session_state.ticket_comments.append(new_comment)
-            _notify_comment(comment_ticket_id, new_comment["username"], new_comment["comment"], is_reply=False)
             st.success("Comment posted.")
             st.rerun()
 
@@ -959,8 +771,7 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
             _reply_indent_col, reply_form_col = st.columns([depth + 1, 10])
             with reply_form_col:
                 reply_name = st.text_input(
-                    "Your name", value=user_name, placeholder="Enter your name",
-                    key=f"reply_name_{comment['comment_id']}",
+                    "Your name", placeholder="Enter your name", key=f"reply_name_{comment['comment_id']}"
                 )
                 reply_text = st.text_area(
                     "Reply", placeholder=f"Reply to {comment['username']}…",
@@ -996,7 +807,6 @@ if st.session_state.get("current_view") == "my_tickets" and my_tickets_person:
                             st.error(_format_supabase_comment_error("save reply to Supabase", exc))
                             st.stop()
                         st.session_state.ticket_comments.append(new_reply)
-                        _notify_comment(new_reply["ticket_id"], new_reply["username"], new_reply["comment"], is_reply=True)
                         st.session_state.reply_to_comment_id = None
                         st.success("Reply posted.")
                         st.rerun()
@@ -1125,15 +935,8 @@ if st.session_state.get("current_view") == "internal_management":
                 "labelColor": "black",
                 "titleColor": "black",
             }
-            # Ticks only at the plotted week-end (Friday) dates so no weekend day appears on the axis.
-            week_end_ticks = [
-                alt.DateTime(year=d.year, month=d.month, date=d.day) for d in plot_df["date"]
-            ]
             trend_chart = alt.Chart(plot_df).mark_line(strokeWidth=2.5).encode(
-                x=alt.X(
-                    "date:T", title="Time (Week End Date)",
-                    axis=alt.Axis(values=week_end_ticks, format="%m/%d/%y", labelOverlap=True, **axis_style),
-                ),
+                x=alt.X("date:T", title="Time (Week End Date)", axis=alt.Axis(**axis_style)),
                 y=alt.Y("moving_average:Q", title="Average Resolution Time (Hours)", axis=alt.Axis(**axis_style)),
                 color=alt.Color(
                     "series:N",
@@ -1315,27 +1118,14 @@ if st.session_state.get("current_view") == "ticket_management":
     previously_edited_df = st.session_state.df[
         st.session_state.df["ID"].astype(str).isin(edited_df["ID"].astype(str))
     ].set_index("ID")
-    field_labels = {"Issue": "Description", "Due Date": "Due date", "Date Closed": "Date closed"}
     for _, ticket in edited_df.iterrows():
         previous_ticket = previously_edited_df.loc[ticket["ID"]]
-        # Compare field by field (ID is the index of previous_ticket), so only real edits are saved/announced.
-        changed_columns = [
-            column for column in previous_ticket.index
-            if column in ticket.index and _cell_text(ticket[column]) != _cell_text(previous_ticket[column])
-        ]
-        if changed_columns:
+        if not ticket.equals(previous_ticket):
             try:
                 get_ticket_repository().update_ticket(ticket.to_dict())
             except Exception as exc:
                 st.error(f"Unable to update {ticket['ID']} in Supabase: {exc}")
                 st.stop()
-            _notify_ticket_submitter(
-                ticket,
-                [
-                    _describe_field_change(field_labels.get(column, column), previous_ticket[column], ticket[column])
-                    for column in changed_columns
-                ],
-            )
     st.session_state.df = pd.concat([edited_df, unedited_df], ignore_index=True)
 
     st.stop()
@@ -1913,7 +1703,7 @@ with st.form("add_ticket_form"):
     issue = st.text_area("Description")
     code = st.selectbox("Code", TICKET_CODES)
     priority = st.selectbox("Priority", ["Urgent", "High", "Medium", "Low"])
-    submitted_by = st.text_input("Submitted by", value=user_name, disabled=True)
+    submitted_by = st.text_input("Submitted by", placeholder="Enter your name")
     attachment_files = st.file_uploader(
         "Upload attachment",
         type=["heic", "heif", "jpeg", "jpg", "png"],
@@ -1935,7 +1725,7 @@ if submitted:
                 "Date Submitted": submitted_at,
                 "Due Date": calculate_due_date(submitted_at),
                 "Date Closed": "",
-                "Submitted By": user_name or "Unknown",
+                "Submitted By": submitted_by.strip() if submitted_by.strip() else "Unknown",
                 "Assigned To": CODE_ASSIGNEE_MAP.get(code, ""),
                 "Notes": "",
                 "Resolution Status": "Pending",
